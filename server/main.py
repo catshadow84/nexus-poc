@@ -1,3 +1,5 @@
+from fastapi import WebSocket, WebSocketDisconnect
+from .broadcast import broadcaster
 import asyncio
 import logging
 from contextlib import asynccontextmanager
@@ -26,6 +28,7 @@ async def lifespan(app: FastAPI):
         reported = payload.get("reported", {})
         store.set_reported(device_id, reported)
         logging.info("state updated %s -> %s", device_id, reported)
+        await broadcaster.broadcast({"type": "state", "data": store.snapshot()})
 
     for device in registry.devices.values():
         await bus.subscribe(f"{device.topic_base}/state", handle_state)
@@ -71,6 +74,7 @@ async def command(device: str, value: dict):
 
     topic = f"{dev.topic_base}/command"
     await bus.publish(topic, cmd.model_dump(mode="json"))
+    await broadcaster.broadcast({"type": "state", "data": store.snapshot()})
 
     return {
         "ok": True,
@@ -78,3 +82,18 @@ async def command(device: str, value: dict):
         "topic": topic,
         "value": cmd.value,
     }
+
+@app.websocket("/ws")
+async def ws_endpoint(ws: WebSocket):
+    await broadcaster.connect(ws)
+    try:
+        # send current state immediately on connect
+        await ws.send_json({"type": "state", "data": store.snapshot()})
+        while True:
+            # we don't expect messages from the client, but this keeps
+            # the connection alive and detects disconnects
+            await ws.receive_text()
+    except WebSocketDisconnect:
+        await broadcaster.disconnect(ws)
+    except Exception:
+        await broadcaster.disconnect(ws)
