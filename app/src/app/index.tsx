@@ -1,31 +1,243 @@
-import { Text, View, StyleSheet } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import {
+  Text, View, StyleSheet, Pressable, ScrollView, Alert,
+} from 'react-native';
+import Slider from '@react-native-community/slider';
+
+const BACKEND_HTTP = 'http://10.132.24.234:8000';
+const BACKEND_WS = 'ws://10.132.24.234:8000/ws';
+
+type DeviceState = {
+  desired?: Record<string, any> | null;
+  reported?: Record<string, any> | null;
+  last_command_id?: string;
+  last_updated?: string;
+};
+
+type RoomState = {
+  room_id: string;
+  devices: Record<string, DeviceState>;
+};
 
 export default function HomeScreen() {
+  const [state, setState] = useState<RoomState | null>(null);
+  const [connected, setConnected] = useState(false);
+  const wsRef = useRef<WebSocket | null>(null);
+
+  useEffect(() => {
+    // initial state fetch
+    fetch(`${BACKEND_HTTP}/room/state`)
+      .then((r) => r.json())
+      .then(setState)
+      .catch((e) => console.warn('initial fetch failed', e));
+
+    // websocket for live updates
+    const ws = new WebSocket(BACKEND_WS);
+    wsRef.current = ws;
+    ws.onopen = () => setConnected(true);
+    ws.onclose = () => setConnected(false);
+    ws.onerror = () => setConnected(false);
+    ws.onmessage = (e) => {
+      try {
+        const msg = JSON.parse(e.data);
+        if (msg.type === 'state') setState(msg.data);
+      } catch (err) {
+        console.warn('bad ws message', err);
+      }
+    };
+    return () => { ws.close(); };
+  }, []);
+
+  async function sendCommand(device: string, value: Record<string, any>) {
+    try {
+      const res = await fetch(`${BACKEND_HTTP}/room/${device}/command`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(value),
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        Alert.alert('Rejected', text.slice(0, 240));
+      }
+    } catch (err) {
+      Alert.alert('Network error', 'Is the backend running?');
+    }
+  }
+
+  if (!state) {
+    return (
+      <View style={styles.center}>
+        <Text style={styles.brand}>NEXUS</Text>
+        <Text style={styles.muted}>connecting…</Text>
+      </View>
+    );
+  }
+
+  const light = state.devices.light?.reported ?? {};
+  const thermo = state.devices.thermostat?.reported ?? {};
+  const curtain = state.devices.curtain?.reported ?? {};
+
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>NEXUS</Text>
-      <Text style={styles.subtitle}>No staff. No friction.</Text>
-    </View>
+    <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollInner}>
+      <View style={styles.header}>
+        <Text style={styles.brand}>NEXUS</Text>
+        <Text style={[styles.dot, connected ? styles.dotOn : styles.dotOff]}>
+          {connected ? '● live' : '○ offline'}
+        </Text>
+      </View>
+
+      {/* ---- LIGHT ---- */}
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>Light</Text>
+        <Text style={styles.value}>
+          {light.power === 'on'
+            ? `On · ${light.brightness ?? 0}% · ${light.color ?? 'neutral'}`
+            : 'Off'}
+        </Text>
+
+        <Pressable
+          style={[styles.btn, light.power === 'on' && styles.btnActive]}
+          onPress={() =>
+            sendCommand('light', {
+              power: light.power === 'on' ? 'off' : 'on',
+              brightness: light.brightness || 80,
+              color: light.color || 'warm',
+            })
+          }
+        >
+          <Text style={styles.btnText}>
+            {light.power === 'on' ? 'Turn Off' : 'Turn On'}
+          </Text>
+        </Pressable>
+
+        <Text style={styles.sliderLabel}>Brightness</Text>
+        <Slider
+          style={styles.slider}
+          minimumValue={0}
+          maximumValue={100}
+          step={5}
+          value={light.brightness ?? 0}
+          onSlidingComplete={(v) =>
+            sendCommand('light', {
+              power: 'on',
+              brightness: Math.round(v),
+              color: light.color || 'warm',
+            })
+          }
+        />
+
+        <View style={styles.row}>
+          {(['warm', 'neutral', 'cool'] as const).map((c) => (
+            <Pressable
+              key={c}
+              style={[styles.chip, light.color === c && styles.chipActive]}
+              onPress={() =>
+                sendCommand('light', {
+                  power: light.power || 'on',
+                  brightness: light.brightness || 80,
+                  color: c,
+                })
+              }
+            >
+              <Text style={styles.chipText}>{c}</Text>
+            </Pressable>
+          ))}
+        </View>
+      </View>
+
+      {/* ---- THERMOSTAT ---- */}
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>Thermostat</Text>
+        <Text style={styles.value}>
+          Now {thermo.current_c ?? '—'}°C · Target {thermo.target_c ?? '—'}°C · {thermo.mode ?? 'cool'}
+        </Text>
+
+        <Text style={styles.sliderLabel}>Target temperature</Text>
+        <Slider
+          style={styles.slider}
+          minimumValue={16}
+          maximumValue={30}
+          step={0.5}
+          value={thermo.target_c ?? 22}
+          onSlidingComplete={(v) =>
+            sendCommand('thermostat', {
+              target_c: Number(v.toFixed(1)),
+              mode: thermo.mode || 'cool',
+            })
+          }
+        />
+      </View>
+
+      {/* ---- CURTAIN ---- */}
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>Curtain</Text>
+        <Text style={styles.value}>{curtain.open_pct ?? 0}% open</Text>
+
+        <Text style={styles.sliderLabel}>Open percentage</Text>
+        <Slider
+          style={styles.slider}
+          minimumValue={0}
+          maximumValue={100}
+          step={5}
+          value={curtain.open_pct ?? 0}
+          onSlidingComplete={(v) =>
+            sendCommand('curtain', { open_pct: Math.round(v) })
+          }
+        />
+      </View>
+
+      <View style={{ height: 40 }} />
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#000',
+  scroll: { flex: 1, backgroundColor: '#0a0a0a' },
+  scrollInner: { padding: 20, paddingTop: 60 },
+  center: {
+    flex: 1, backgroundColor: '#0a0a0a',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  header: {
+    flexDirection: 'row', justifyContent: 'space-between',
+    alignItems: 'baseline', marginBottom: 24,
+  },
+  brand: {
+    color: '#fff', fontSize: 32, fontWeight: 'bold',
+    letterSpacing: 6,
+  },
+  muted: { color: '#666', marginTop: 12, letterSpacing: 2 },
+  dot: { fontSize: 12, letterSpacing: 1 },
+  dotOn: { color: '#4ade80' },
+  dotOff: { color: '#f87171' },
+
+  card: {
+    backgroundColor: '#141414', borderRadius: 14,
+    padding: 18, marginBottom: 16,
+    borderWidth: 1, borderColor: '#222',
+  },
+  cardTitle: {
+    color: '#fff', fontSize: 18, fontWeight: '600',
+    marginBottom: 6, letterSpacing: 1,
+  },
+  value: { color: '#aaa', fontSize: 14, marginBottom: 14 },
+
+  btn: {
+    backgroundColor: '#fff', paddingVertical: 12,
+    borderRadius: 10, alignItems: 'center', marginBottom: 14,
+  },
+  btnActive: { backgroundColor: '#e5e5e5' },
+  btnText: { color: '#000', fontSize: 15, fontWeight: '600', letterSpacing: 1 },
+
+  sliderLabel: { color: '#666', fontSize: 12, marginBottom: 2, letterSpacing: 1 },
+  slider: { width: '100%', height: 36 },
+
+  row: { flexDirection: 'row', gap: 8, marginTop: 4 },
+  chip: {
+    flex: 1, paddingVertical: 8,
+    borderRadius: 8, borderWidth: 1, borderColor: '#333',
     alignItems: 'center',
-    justifyContent: 'center',
   },
-  title: {
-    color: '#fff',
-    fontSize: 48,
-    fontWeight: 'bold',
-    letterSpacing: 8,
-  },
-  subtitle: {
-    color: '#888',
-    fontSize: 14,
-    marginTop: 12,
-    letterSpacing: 2,
-  },
+  chipActive: { backgroundColor: '#fff', borderColor: '#fff' },
+  chipText: { color: '#888', fontSize: 12, letterSpacing: 1 },
 });
