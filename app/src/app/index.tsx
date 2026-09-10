@@ -4,8 +4,8 @@ import {
 } from 'react-native';
 import Slider from '@react-native-community/slider';
 
-const BACKEND_HTTP = 'http://10.132.24.234:8000';
-const BACKEND_WS = 'ws://10.132.24.234:8000/ws';
+const BACKEND_HTTP = 'http://172.18.22.12:8000';
+const BACKEND_WS = 'ws://172.18.22.12:8000/ws';
 
 type DeviceState = {
   desired?: Record<string, any> | null;
