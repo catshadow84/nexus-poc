@@ -3,10 +3,10 @@ import {
   Text, View, StyleSheet, Pressable, ScrollView, Alert,
 } from 'react-native';
 import Slider from '@react-native-community/slider';
-import { Link } from 'expo-router';
+import { router } from 'expo-router';
 
-const BACKEND_HTTP = 'http://172.18.22.12:8000';
-const BACKEND_WS = 'ws://172.18.22.12:8000/ws';
+const BACKEND_HTTP = 'http://10.21.146.115:8000';
+const BACKEND_WS = 'ws://10.21.146.115:8000/ws';
 
 async function runScene(name: string) {
   try {
@@ -119,11 +119,22 @@ export default function HomeScreen() {
   </Pressable>
 </View>
 
-      <Link href="/booking" asChild>
-      <Pressable style={styles.btn}>
-        <Text style={styles.btnText}>Book a stay →</Text>
-      </Pressable>
-    </Link>
+      <View style={styles.actionRow}>
+  <Pressable
+    style={[styles.actionBtn, styles.actionBtnLeft]}
+    onPress={() => router.push('/nora')}
+  >
+    <Text style={styles.actionLabel}>Ask NORA</Text>
+    <Text style={styles.actionIcon}>◉</Text>
+  </Pressable>
+  <Pressable
+    style={styles.actionBtn}
+    onPress={() => router.push('/booking')}
+  >
+    <Text style={styles.actionLabel}>Book a stay</Text>
+    <Text style={styles.actionIcon}>→</Text>
+  </Pressable>
+</View>
 
       {/* ---- LIGHT ---- */}
       <View style={styles.card}>
@@ -231,6 +242,19 @@ export default function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
+  actionRow: { flexDirection: 'row', marginBottom: 20, gap: 8 },
+actionBtn: {
+  flex: 1,
+  backgroundColor: '#141414',
+  borderWidth: 1,
+  borderColor: '#222',
+  borderRadius: 12,
+  paddingVertical: 14,
+  alignItems: 'center',
+},
+actionBtnLeft: {},
+actionLabel: { color: '#fff', fontSize: 13, letterSpacing: 1, marginBottom: 4 },
+actionIcon: { color: '#888', fontSize: 16 },
   sceneRow: {
   flexDirection: 'row',
   gap: 8,

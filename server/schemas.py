@@ -82,3 +82,8 @@ class BookingOut(BaseModel):
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+class ChatIn(BaseModel):
+    session_id: str
+    message: str
+    booking_id: str | None = None

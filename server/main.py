@@ -1,3 +1,4 @@
+from .nora import handle_message
 from .scenes import apply_scene, list_scenes
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -6,7 +7,7 @@ from fastapi import Depends
 from .db import init_db, get_session
 from .models import Guest, Booking
 from .schemas import (
-    GuestCreate, GuestOut, BookingCreate, BookingOut,
+    GuestCreate, GuestOut, BookingCreate, BookingOut, ChatIn,
 )
 from .booking_service import (
     get_guest, get_booking, check_in, check_out,
@@ -244,3 +245,15 @@ async def run_scene(name: str):
     except KeyError:
         raise HTTPException(404, f"unknown scene {name}")
     return {"ok": True, "scene": name, "applied_devices": applied}
+
+@app.post("/nora/chat")
+async def nora_chat(
+    payload: ChatIn,
+    session: AsyncSession = Depends(get_session),
+):
+    return await handle_message(
+        session,
+        payload.session_id,
+        payload.message,
+        booking_id=payload.booking_id,
+    )
