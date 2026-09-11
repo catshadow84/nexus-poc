@@ -8,6 +8,20 @@ import { Link } from 'expo-router';
 const BACKEND_HTTP = 'http://172.18.22.12:8000';
 const BACKEND_WS = 'ws://172.18.22.12:8000/ws';
 
+async function runScene(name: string) {
+  try {
+    const res = await fetch(`${BACKEND_HTTP}/scenes/${name}`, {
+      method: 'POST',
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      Alert.alert('Scene failed', text.slice(0, 240));
+    }
+  } catch {
+    Alert.alert('Network error', 'Is the backend running?');
+  }
+}
+
 type DeviceState = {
   desired?: Record<string, any> | null;
   reported?: Record<string, any> | null;
@@ -56,6 +70,7 @@ export default function HomeScreen() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(value),
       });
+      console.log('POST /room/' + device + '/command', res.status);
       if (!res.ok) {
         const text = await res.text();
         Alert.alert('Rejected', text.slice(0, 240));
@@ -86,6 +101,23 @@ export default function HomeScreen() {
           {connected ? '● live' : '○ offline'}
         </Text>
       </View>
+
+      <View style={styles.sceneRow}>
+  <Pressable style={styles.sceneBtn} onPress={() => runScene('good_morning')}>
+    <Text style={styles.sceneLabel}>Good morning</Text>
+    <Text style={styles.sceneIcon}>☀︎</Text>
+  </Pressable>
+
+  <Pressable style={styles.sceneBtn} onPress={() => runScene('focus')}>
+    <Text style={styles.sceneLabel}>Focus</Text>
+    <Text style={styles.sceneIcon}>◆</Text>
+  </Pressable>
+
+  <Pressable style={styles.sceneBtn} onPress={() => runScene('goodnight')}>
+    <Text style={styles.sceneLabel}>Goodnight</Text>
+    <Text style={styles.sceneIcon}>☾</Text>
+  </Pressable>
+</View>
 
       <Link href="/booking" asChild>
       <Pressable style={styles.btn}>
@@ -199,6 +231,30 @@ export default function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
+  sceneRow: {
+  flexDirection: 'row',
+  gap: 8,
+  marginBottom: 20,
+},
+sceneBtn: {
+  flex: 1,
+  backgroundColor: '#141414',
+  borderWidth: 1,
+  borderColor: '#222',
+  borderRadius: 12,
+  paddingVertical: 14,
+  alignItems: 'center',
+},
+sceneLabel: {
+  color: '#fff',
+  fontSize: 12,
+  letterSpacing: 1,
+  marginBottom: 4,
+},
+sceneIcon: {
+  color: '#888',
+  fontSize: 18,
+},
   scroll: { flex: 1, backgroundColor: '#0a0a0a' },
   scrollInner: { padding: 20, paddingTop: 60 },
   center: {

@@ -1,3 +1,4 @@
+from .scenes import apply_scene, list_scenes
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import Depends
@@ -230,3 +231,16 @@ async def do_check_out(
     except ValueError as e:
         raise HTTPException(400, str(e))
     return {"ok": True, "booking_id": b.id, "status": b.status, **result}
+
+@app.get("/scenes")
+def get_scenes():
+    return {"scenes": list_scenes()}
+
+
+@app.post("/scenes/{name}")
+async def run_scene(name: str):
+    try:
+        applied = await apply_scene(name)
+    except KeyError:
+        raise HTTPException(404, f"unknown scene {name}")
+    return {"ok": True, "scene": name, "applied_devices": applied}
