@@ -3,6 +3,7 @@ import {
   Text, View, StyleSheet, Pressable, ScrollView, Alert,
 } from 'react-native';
 import Slider from '@react-native-community/slider';
+import { Link } from 'expo-router';
 
 const BACKEND_HTTP = 'http://172.18.22.12:8000';
 const BACKEND_WS = 'ws://172.18.22.12:8000/ws';
@@ -85,6 +86,12 @@ export default function HomeScreen() {
           {connected ? '● live' : '○ offline'}
         </Text>
       </View>
+
+      <Link href="/booking" asChild>
+      <Pressable style={styles.btn}>
+        <Text style={styles.btnText}>Book a stay →</Text>
+      </Pressable>
+    </Link>
 
       {/* ---- LIGHT ---- */}
       <View style={styles.card}>

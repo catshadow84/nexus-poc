@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, EmailStr
 from typing import Literal, Optional
 from uuid import UUID, uuid4
 from datetime import datetime
@@ -45,3 +45,40 @@ class DeviceState(BaseModel):
 class RoomState(BaseModel):
     room_id: str
     devices: dict[str, DeviceState] = {}
+
+
+class GuestCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    email: EmailStr
+    preferences: dict = Field(default_factory=dict)
+
+
+class GuestOut(BaseModel):
+    id: str
+    name: str
+    email: str
+    preferences: dict
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class BookingCreate(BaseModel):
+    guest_id: str
+    room_id: str = "room1"
+    planned_check_in: Optional[datetime] = None
+    planned_check_out: Optional[datetime] = None
+
+
+class BookingOut(BaseModel):
+    id: str
+    guest_id: str
+    room_id: str
+    status: str
+    planned_check_in: Optional[datetime] = None
+    planned_check_out: Optional[datetime] = None
+    actual_check_in: Optional[datetime] = None
+    actual_check_out: Optional[datetime] = None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}

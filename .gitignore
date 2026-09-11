@@ -19,3 +19,8 @@ web-build/
 *.db-journal
 *.sqlite
 *.sqlite3
+
+nexus.db
+*.db
+
+test_ws.py

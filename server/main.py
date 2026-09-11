@@ -1,3 +1,16 @@
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import Depends
+
+from .db import init_db, get_session
+from .models import Guest, Booking
+from .schemas import (
+    GuestCreate, GuestOut, BookingCreate, BookingOut,
+)
+from .booking_service import (
+    get_guest, get_booking, check_in, check_out,
+    RESERVED, CHECKED_IN, CHECKED_OUT,
+)
 from fastapi import WebSocket, WebSocketDisconnect
 from .broadcast import broadcaster
 import asyncio
@@ -17,6 +30,7 @@ logging.basicConfig(level=logging.INFO)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    await init_db()
     await bus.start()
 
     async def handle_state(topic: str, payload: dict):
@@ -97,3 +111,122 @@ async def ws_endpoint(ws: WebSocket):
         await broadcaster.disconnect(ws)
     except Exception:
         await broadcaster.disconnect(ws)
+
+
+# ---------- guests ----------
+
+
+@app.post("/guests", response_model=GuestOut)
+async def create_guest(
+    payload: GuestCreate,
+    session: AsyncSession = Depends(get_session),
+):
+    # if a guest with this email exists, update their preferences and return
+    existing = await session.execute(
+        select(Guest).where(Guest.email == payload.email)
+    )
+    guest = existing.scalar_one_or_none()
+    if guest:
+        guest.name = payload.name
+        guest.preferences = payload.preferences
+        await session.commit()
+        await session.refresh(guest)
+        return guest
+
+    guest = Guest(
+        name=payload.name,
+        email=payload.email,
+        preferences=payload.preferences,
+    )
+    session.add(guest)
+    await session.commit()
+    await session.refresh(guest)
+    return guest
+
+
+@app.get("/guests/{guest_id}", response_model=GuestOut)
+async def read_guest(
+    guest_id: str,
+    session: AsyncSession = Depends(get_session),
+):
+    g = await get_guest(session, guest_id)
+    if not g:
+        raise HTTPException(404, "guest not found")
+    return g
+
+
+# ---------- bookings ----------
+
+
+@app.post("/bookings", response_model=BookingOut)
+async def create_booking(
+    payload: BookingCreate,
+    session: AsyncSession = Depends(get_session),
+):
+    g = await get_guest(session, payload.guest_id)
+    if not g:
+        raise HTTPException(404, "guest not found")
+
+    booking = Booking(
+        guest_id=payload.guest_id,
+        room_id=payload.room_id,
+        status=RESERVED,
+        planned_check_in=payload.planned_check_in,
+        planned_check_out=payload.planned_check_out,
+    )
+    session.add(booking)
+    await session.commit()
+    await session.refresh(booking)
+    return booking
+
+
+@app.get("/bookings/{booking_id}", response_model=BookingOut)
+async def read_booking(
+    booking_id: str,
+    session: AsyncSession = Depends(get_session),
+):
+    b = await get_booking(session, booking_id)
+    if not b:
+        raise HTTPException(404, "booking not found")
+    return b
+
+
+@app.get("/bookings", response_model=list[BookingOut])
+async def list_bookings(
+    session: AsyncSession = Depends(get_session),
+):
+    result = await session.execute(select(Booking).order_by(Booking.created_at.desc()))
+    return list(result.scalars().all())
+
+
+# ---------- check in / out ----------
+
+
+@app.post("/bookings/{booking_id}/checkin")
+async def do_check_in(
+    booking_id: str,
+    session: AsyncSession = Depends(get_session),
+):
+    b = await get_booking(session, booking_id)
+    if not b:
+        raise HTTPException(404, "booking not found")
+    try:
+        result = await check_in(session, b)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return {"ok": True, "booking_id": b.id, "status": b.status, **result}
+
+
+@app.post("/bookings/{booking_id}/checkout")
+async def do_check_out(
+    booking_id: str,
+    session: AsyncSession = Depends(get_session),
+):
+    b = await get_booking(session, booking_id)
+    if not b:
+        raise HTTPException(404, "booking not found")
+    try:
+        result = await check_out(session, b)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return {"ok": True, "booking_id": b.id, "status": b.status, **result}
