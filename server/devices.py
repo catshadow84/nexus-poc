@@ -1,5 +1,4 @@
 from abc import ABC, abstractmethod
-from uuid import UUID
 
 from pydantic import BaseModel
 
@@ -66,4 +65,10 @@ class DeviceRegistry:
         return self.devices[device_id]
 
 
-registry = DeviceRegistry(room_id="room1")
+_registries: dict[str, DeviceRegistry] = {}
+
+
+def get_registry(room_id: str = "room1") -> DeviceRegistry:
+    if room_id not in _registries:
+        _registries[room_id] = DeviceRegistry(room_id)
+    return _registries[room_id]

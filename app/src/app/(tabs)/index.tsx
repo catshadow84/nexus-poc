@@ -5,8 +5,8 @@ import {
 import Slider from '@react-native-community/slider';
 import { router } from 'expo-router';
 
-const BACKEND_HTTP = 'http://10.21.152.142:8000';
-const BACKEND_WS = 'ws://10.21.152.142:8000/ws';
+const BACKEND_HTTP = 'http://192.168.10.30:8000';
+const BACKEND_WS = 'ws://192.168.10.30:8000/ws';
 
 async function doCheckout(bookingId: string, onSuccess: (id: string) => void) {
   try {
@@ -25,7 +25,7 @@ async function doCheckout(bookingId: string, onSuccess: (id: string) => void) {
 }
 async function runScene(name: string) {
   try {
-    const res = await fetch(`${BACKEND_HTTP}/scenes/${name}`, {
+    const res = await fetch(`${BACKEND_HTTP}/rooms/room1/scenes/${name}`, {
       method: 'POST',
     });
     if (!res.ok) {
@@ -58,7 +58,7 @@ export default function HomeScreen() {
 
   useEffect(() => {
     // initial state fetch
-    fetch(`${BACKEND_HTTP}/room/state`)
+    fetch(`${BACKEND_HTTP}/rooms/room1/state`)
       .then((r) => r.json())
       .then(setState)
       .catch((e) => console.warn('initial fetch failed', e));
@@ -77,7 +77,7 @@ export default function HomeScreen() {
         console.warn('bad ws message', err);
       }
     };
-    fetch(`${BACKEND_HTTP}/bookings/active`)
+    fetch(`${BACKEND_HTTP}/bookings/active?room_id=room1`)
   .then((r) => r.json())
   .then((b) => {
     if (b && b.id) {
@@ -97,7 +97,7 @@ export default function HomeScreen() {
 
   async function sendCommand(device: string, value: Record<string, any>) {
     try {
-      const res = await fetch(`${BACKEND_HTTP}/room/${device}/command`, {
+      const res = await fetch(`${BACKEND_HTTP}/rooms/room1/device/${device}/command`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(value),
@@ -112,14 +112,14 @@ export default function HomeScreen() {
     }
   }
 
-  if (!state) {
-    return (
-      <View style={styles.center}>
-        <Text style={styles.brand}>NEXUS</Text>
-        <Text style={styles.muted}>connecting…</Text>
-      </View>
-    );
-  }
+  if (!state || !state.devices) {
+  return (
+    <View style={styles.center}>
+      <Text style={styles.brand}>NEXUS</Text>
+      <Text style={styles.muted}>connecting…</Text>
+    </View>
+  );
+}
 
   const light = state.devices.light?.reported ?? {};
   const thermo = state.devices.thermostat?.reported ?? {};
@@ -196,12 +196,12 @@ export default function HomeScreen() {
         <Pressable
           style={[styles.btn, light.power === 'on' && styles.btnActive]}
           onPress={() =>
-            sendCommand('light', {
-              power: light.power === 'on' ? 'off' : 'on',
-              brightness: light.brightness || 80,
-              color: light.color || 'warm',
-            })
-          }
+  sendCommand('light', {
+    power: light.power === 'on' ? 'off' : 'on',
+    brightness: light.brightness || 80,
+    color: 'warm',  // was: light.color || 'warm'
+  })
+}
         >
           <Text style={styles.btnText}>
             {light.power === 'on' ? 'Turn Off' : 'Turn On'}

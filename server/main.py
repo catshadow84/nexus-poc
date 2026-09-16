@@ -25,8 +25,8 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from .mqtt_bus import bus
-from .state import store
-from .devices import registry
+from .state import get_store, all_stores
+from .devices import get_registry
 
 
 logging.basicConfig(level=logging.INFO)
@@ -38,18 +38,20 @@ async def lifespan(app: FastAPI):
     await bus.start()
 
     async def handle_state(topic: str, payload: dict):
-        # topic: nexus/room1/<device>/state
+        # topic: nexus/{room}/{device}/state
         parts = topic.split("/")
         if len(parts) != 4 or parts[3] != "state":
             return
-        device_id = parts[2]
+        room_id, device_id = parts[1], parts[2]
         reported = payload.get("reported", {})
-        store.set_reported(device_id, reported)
-        logging.info("state updated %s -> %s", device_id, reported)
-        await broadcaster.broadcast({"type": "state", "data": store.snapshot()})
+        get_store(room_id).set_reported(device_id, reported)
+        logging.info("state updated room=%s %s -> %s", room_id, device_id, reported)
+        await broadcaster.broadcast(
+            room_id,
+            {"type": "state", "data": get_store(room_id).snapshot()},
+        )
 
-    for device in registry.devices.values():
-        await bus.subscribe(f"{device.topic_base}/state", handle_state)
+    await bus.subscribe("nexus/+/+/state", handle_state)
 
     yield
 
@@ -71,13 +73,14 @@ def health():
     return {"status": "ok"}
 
 
-@app.get("/room/state")
-def room_state():
-    return store.snapshot()
+@app.get("/rooms/{room_id}/state")
+def room_state(room_id: str):
+    return get_store(room_id).snapshot()
 
-
-@app.post("/room/{device}/command")
-async def command(device: str, value: dict):
+@app.post("/rooms/{room_id}/device/{device}/command")
+async def command(room_id: str, device: str, value: dict):
+    registry = get_registry(room_id)
+    store = get_store(room_id)
     try:
         dev = registry.get(device)
     except KeyError:
@@ -89,10 +92,9 @@ async def command(device: str, value: dict):
         raise HTTPException(422, str(e))
 
     store.set_desired(device, cmd.value, cmd.id)
-
     topic = f"{dev.topic_base}/command"
     await bus.publish(topic, cmd.model_dump(mode="json"))
-    await broadcaster.broadcast({"type": "state", "data": store.snapshot()})
+    await broadcaster.broadcast(room_id, {"type": "state", "data": store.snapshot()})
 
     return {
         "ok": True,
@@ -102,19 +104,19 @@ async def command(device: str, value: dict):
     }
 
 @app.websocket("/ws")
-async def ws_endpoint(ws: WebSocket):
-    await broadcaster.connect(ws)
+async def ws_endpoint(ws: WebSocket, room_id: str = "room1"):
+    await broadcaster.connect(room_id, ws)
     try:
-        # send current state immediately on connect
-        await ws.send_json({"type": "state", "data": store.snapshot()})
+        await ws.send_json({
+            "type": "state",
+            "data": get_store(room_id).snapshot(),
+        })
         while True:
-            # we don't expect messages from the client, but this keeps
-            # the connection alive and detects disconnects
             await ws.receive_text()
     except WebSocketDisconnect:
-        await broadcaster.disconnect(ws)
+        await broadcaster.disconnect(room_id, ws)
     except Exception:
-        await broadcaster.disconnect(ws)
+        await broadcaster.disconnect(room_id, ws)
 
 
 # ---------- guests ----------
@@ -311,13 +313,17 @@ def get_scenes():
     return {"scenes": list_scenes()}
 
 
-@app.post("/scenes/{name}")
-async def run_scene(name: str):
+@app.post("/rooms/{room_id}/scenes/{name}")
+async def run_scene(room_id: str, name: str):
     try:
-        applied = await apply_scene(name)
+        applied = await apply_scene(room_id, name)
     except KeyError:
         raise HTTPException(404, f"unknown scene {name}")
     return {"ok": True, "scene": name, "applied_devices": applied}
+
+@app.get("/rooms")
+def list_rooms():
+    return {"rooms": list(all_stores().keys())}
 
 @app.post("/nora/chat")
 async def nora_chat(

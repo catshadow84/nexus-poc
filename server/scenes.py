@@ -1,7 +1,7 @@
 import logging
 
-from .devices import registry
-from .state import store
+from .state import get_store
+from .devices import get_registry
 from .mqtt_bus import bus
 from .broadcast import broadcaster
 
@@ -28,9 +28,12 @@ SCENES: dict[str, dict[str, dict]] = {
 }
 
 
-async def apply_scene(name: str) -> list[str]:
+async def apply_scene(room_id: str, name: str) -> list[str]:
     if name not in SCENES:
         raise KeyError(name)
+
+    store = get_store(room_id)
+    registry = get_registry(room_id)
 
     applied: list[str] = []
     for device_id, value in SCENES[name].items():
@@ -38,14 +41,14 @@ async def apply_scene(name: str) -> list[str]:
             dev = registry.get(device_id)
             cmd = dev.make_command(value)
         except Exception as e:
-            log.warning("scene %s skip %s: %s", name, device_id, e)
+            log.warning("scene %s room %s skip %s: %s", name, room_id, device_id, e)
             continue
 
         store.set_desired(device_id, cmd.value, cmd.id)
         await bus.publish(f"{dev.topic_base}/command", cmd.model_dump(mode="json"))
         applied.append(device_id)
 
-    await broadcaster.broadcast({"type": "state", "data": store.snapshot()})
+    await broadcaster.broadcast(room_id, {"type": "state", "data": store.snapshot()})
     return applied
 
 

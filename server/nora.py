@@ -5,7 +5,7 @@ import re
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .nora_tools import TOOLS
-from .state import store
+from .state import get_store
 
 
 log = logging.getLogger("nora")
@@ -34,6 +34,7 @@ def _fallback_plan(
     message: str,
     guest_name: str | None = None,
     guest_prefs: dict | None = None,
+    room_id: str = "room1",
 ) -> dict:
     m = message.lower().strip()
     name = _first_name(guest_name) if guest_name else None
@@ -105,7 +106,7 @@ def _fallback_plan(
         return {"reply": addr(f"curtain to {pct}%."), "calls": [("set_curtain", {"open_pct": pct})]}
 
     if any(k in m for k in ("cold", "freezing", "warm me", "hot", "temperature", "degrees", "thermostat")):
-        state = store.snapshot()
+        state = get_store(room_id).snapshot()
         current = (state.get("devices", {}).get("thermostat", {}).get("reported") or {}).get("target_c", 22.0)
         default_pref = (prefs.get("thermostat") or {}).get("target_c")
         nums = re.findall(r"(\d+(?:\.\d+)?)", m)
@@ -159,7 +160,7 @@ def _fallback_plan(
     # ---- state ----
 
     if any(k in m for k in ("how", "what", "state", "status", "currently")):
-        s = store.snapshot()
+        s = get_store(room_id).snapshot()
         dev = s.get("devices", {})
         light = dev.get("light", {}).get("reported") or {}
         thermo = dev.get("thermostat", {}).get("reported") or {}
@@ -179,14 +180,14 @@ def _fallback_plan(
 # ---------- public API ----------
 
 async def handle_message(
-    session: AsyncSession,
+    session,
     session_id: str,
     message: str,
     booking_id: str | None = None,
+    room_id: str = "room1",
 ) -> dict:
-    # load guest context if a booking is attached
-    guest_name: str | None = None
-    guest_prefs: dict = {}
+    guest_name = None
+    guest_prefs = {}
     if booking_id:
         booking = await get_booking(session, booking_id)
         if booking and booking.status == "CHECKED_IN":
@@ -194,16 +195,17 @@ async def handle_message(
             if guest:
                 guest_name = guest.name
                 guest_prefs = guest.preferences or {}
+            room_id = booking.room_id  # trust the booking over the query param
 
-    plan = _fallback_plan(message, guest_name, guest_prefs)
+    plan = _fallback_plan(message, guest_name, guest_prefs, room_id)
 
     results = []
     for tool_name, args in plan["calls"]:
         fn = TOOLS.get(tool_name)
         if not fn:
-            log.warning("unknown tool %s", tool_name)
             continue
         call_args = dict(args)
+        call_args["room_id"] = room_id
         if booking_id and "booking_id" not in call_args:
             call_args["booking_id"] = booking_id
         try:
@@ -218,4 +220,5 @@ async def handle_message(
         "actions": results,
         "session_id": session_id,
         "guest_name": guest_name,
+        "room_id": room_id,
     }

@@ -3,7 +3,7 @@ import {
   Text, View, TextInput, Pressable, StyleSheet, ScrollView, Alert,
 } from 'react-native';
 
-const BACKEND = 'http://10.21.152.142:8000';
+const BACKEND = 'http://192.168.10.30:8000';
 
 function buildPreferences(name: string) {
   const hash = name.split('').reduce((a, c) => a + c.charCodeAt(0), 0);
@@ -61,7 +61,7 @@ export default function BookingScreen() {
       
       // pre-step: if a booking is already checked in, check it out so the room is free
 try {
-  const activeRes = await fetch(`${BACKEND}/bookings/active`);
+  const activeRes = await fetch(`${BACKEND}/bookings/active?room_id=room1`);;
   if (activeRes.ok) {
     const active = await activeRes.json();
     if (active && active.id) {

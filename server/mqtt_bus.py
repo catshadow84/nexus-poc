@@ -1,8 +1,7 @@
 import asyncio
 import json
 import logging
-from contextlib import asynccontextmanager
-from typing import AsyncIterator, Callable, Awaitable
+from typing import Awaitable, Callable
 
 import asyncio_mqtt as aiomqtt
 
@@ -10,6 +9,25 @@ log = logging.getLogger("mqtt")
 
 BROKER_HOST = "localhost"
 BROKER_PORT = 1883
+
+
+def _topic_matches(pattern: str, topic: str) -> bool:
+    """MQTT level-based wildcard matcher.
+
+    `+` matches a single level, `#` matches the remainder.
+    """
+    p = pattern.split("/")
+    t = topic.split("/")
+    i = 0
+    while i < len(p):
+        if p[i] == "#":
+            return True
+        if i >= len(t):
+            return False
+        if p[i] != "+" and p[i] != t[i]:
+            return False
+        i += 1
+    return i == len(t)
 
 
 class MqttBus:
@@ -32,7 +50,11 @@ class MqttBus:
         if self._client:
             await self._client.__aexit__(None, None, None)
 
-    async def subscribe(self, topic: str, handler):
+    async def subscribe(
+        self,
+        topic: str,
+        handler: Callable[[str, dict], Awaitable[None]],
+    ):
         self._handlers[topic] = handler
         if self._client:
             await self._client.subscribe(topic)
@@ -43,7 +65,7 @@ class MqttBus:
         await self._client.publish(topic, json.dumps(payload, default=str))
 
     async def _listen(self):
-        assert self._client
+        assert self._client is not None
         async with self._client.messages() as messages:
             async for message in messages:
                 topic = str(message.topic)
@@ -52,9 +74,14 @@ class MqttBus:
                 except Exception:
                     log.warning("Bad payload on %s", topic)
                     continue
-                handler = self._handlers.get(topic)
-                if handler:
-                    await handler(topic, payload)
+
+                for pattern, handler in self._handlers.items():
+                    if _topic_matches(pattern, topic):
+                        try:
+                            await handler(topic, payload)
+                        except Exception:
+                            log.exception("handler failed for topic %s", topic)
+                        break
 
 
 bus = MqttBus()

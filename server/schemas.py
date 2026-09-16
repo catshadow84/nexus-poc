@@ -87,3 +87,4 @@ class ChatIn(BaseModel):
     session_id: str
     message: str
     booking_id: str | None = None
+    room_id: str = "room1"

@@ -5,7 +5,7 @@ from .schemas import RoomState, DeviceState, DeviceId
 
 
 class StateStore:
-    def __init__(self, room_id: str = "room1"):
+    def __init__(self, room_id: str):
         self.room_id = room_id
         self.room = RoomState(room_id=room_id)
         for dev in ("light", "thermostat", "curtain"):
@@ -30,4 +30,14 @@ class StateStore:
         return self.room.model_dump(mode="json")
 
 
-store = StateStore()
+_stores: dict[str, StateStore] = {}
+
+
+def get_store(room_id: str = "room1") -> StateStore:
+    if room_id not in _stores:
+        _stores[room_id] = StateStore(room_id)
+    return _stores[room_id]
+
+
+def all_stores() -> dict[str, StateStore]:
+    return dict(_stores)

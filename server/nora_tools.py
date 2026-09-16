@@ -2,11 +2,9 @@ from .models import ServiceOrder
 import logging
 from datetime import datetime
 from uuid import uuid4
-
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from .devices import registry
-from .state import store
+from .state import get_store
+from .devices import get_registry
 from .mqtt_bus import bus
 from .broadcast import broadcaster
 from .booking_service import get_booking as _get_booking, check_out as _check_out
@@ -18,33 +16,31 @@ log = logging.getLogger("nora.tools")
 
 
 
-async def _issue_command(device_id: str, value: dict) -> dict:
+async def _issue_command(room_id: str, device_id: str, value: dict) -> dict:
+    registry = get_registry(room_id)
+    store = get_store(room_id)
     dev = registry.get(device_id)
     cmd = dev.make_command(value)
     store.set_desired(device_id, cmd.value, cmd.id)
     await bus.publish(f"{dev.topic_base}/command", cmd.model_dump(mode="json"))
-    await broadcaster.broadcast({"type": "state", "data": store.snapshot()})
+    await broadcaster.broadcast(room_id, {"type": "state", "data": store.snapshot()})
     return {"device": device_id, "value": cmd.value, "command_id": str(cmd.id)}
 
 
-async def tool_get_room_state(session, **_):
-    return store.snapshot()
+async def tool_get_room_state(session, room_id="room1", **_):
+    return get_store(room_id).snapshot()
 
 
-async def tool_set_light(session, power, brightness=80, color="warm", **_):
-    return await _issue_command(
-        "light", {"power": power, "brightness": brightness, "color": color}
-    )
+async def tool_set_light(session, room_id="room1", power="off", brightness=80, color="warm", **_):
+    return await _issue_command(room_id, "light", {"power": power, "brightness": brightness, "color": color})
 
 
-async def tool_set_thermostat(session, target_c, mode="cool", **_):
-    return await _issue_command(
-        "thermostat", {"target_c": float(target_c), "mode": mode}
-    )
+async def tool_set_thermostat(session, room_id="room1", target_c=22, mode="cool", **_):
+    return await _issue_command(room_id, "thermostat", {"target_c": float(target_c), "mode": mode})
 
 
-async def tool_set_curtain(session, open_pct, **_):
-    return await _issue_command("curtain", {"open_pct": int(open_pct)})
+async def tool_set_curtain(session, room_id="room1", open_pct=0, **_):
+    return await _issue_command(room_id, "curtain", {"open_pct": int(open_pct)})
 
 
 async def tool_get_booking(session: AsyncSession, booking_id, **_):

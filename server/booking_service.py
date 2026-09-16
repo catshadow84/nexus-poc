@@ -5,8 +5,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .models import Booking, Guest
-from .devices import registry
-from .state import store
+from .state import get_store
+from .devices import get_registry
 from .mqtt_bus import bus
 from .broadcast import broadcaster
 
@@ -23,10 +23,10 @@ CHECKED_OUT = "CHECKED_OUT"
 # ---------- helpers ----------
 
 
-async def _apply_preferences(guest: Guest) -> list[str]:
-    """Send a command for each device in the guest's preferences.
-    Returns list of device ids successfully commanded."""
+async def _apply_preferences(room_id: str, guest: Guest) -> list[str]:
     applied = []
+    store = get_store(room_id)
+    registry = get_registry(room_id)
     for device_id, value in (guest.preferences or {}).items():
         try:
             dev = registry.get(device_id)
@@ -39,17 +39,18 @@ async def _apply_preferences(guest: Guest) -> list[str]:
         await bus.publish(f"{dev.topic_base}/command", cmd.model_dump(mode="json"))
         applied.append(device_id)
 
-    await broadcaster.broadcast({"type": "state", "data": store.snapshot()})
+    await broadcaster.broadcast(room_id, {"type": "state", "data": store.snapshot()})
     return applied
 
 
-async def _reset_room() -> None:
-    """Send default commands to every device."""
+async def _reset_room(room_id: str) -> None:
     defaults = {
         "light": {"power": "off", "brightness": 0, "color": "neutral"},
         "thermostat": {"target_c": 22.0, "mode": "cool"},
         "curtain": {"open_pct": 0},
     }
+    store = get_store(room_id)
+    registry = get_registry(room_id)
     for device_id, value in defaults.items():
         try:
             dev = registry.get(device_id)
@@ -60,7 +61,7 @@ async def _reset_room() -> None:
         store.set_desired(device_id, cmd.value, cmd.id)
         await bus.publish(f"{dev.topic_base}/command", cmd.model_dump(mode="json"))
 
-    await broadcaster.broadcast({"type": "state", "data": store.snapshot()})
+    await broadcaster.broadcast(room_id, {"type": "state", "data": store.snapshot()})
 
 
 # ---------- public API ----------
@@ -94,7 +95,7 @@ async def check_in(session: AsyncSession, booking: Booking) -> dict:
     booking.actual_check_in = datetime.utcnow()
 
     guest = await get_guest(session, booking.guest_id)
-    applied = await _apply_preferences(guest) if guest else []
+    applied = await _apply_preferences(booking.room_id, guest) if guest else []
 
     await session.commit()
     return {"applied_devices": applied}
@@ -106,6 +107,6 @@ async def check_out(session: AsyncSession, booking: Booking) -> dict:
 
     booking.status = CHECKED_OUT
     booking.actual_check_out = datetime.utcnow()
-    await _reset_room()
+    await _reset_room(booking.room_id)
     await session.commit()
     return {"reset": True}
