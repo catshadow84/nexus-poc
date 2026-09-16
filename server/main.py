@@ -1,3 +1,5 @@
+from datetime import datetime
+import math
 from .nora import handle_message
 from .scenes import apply_scene, list_scenes
 from sqlalchemy import select
@@ -5,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import Depends
 
 from .db import init_db, get_session
-from .models import Guest, Booking
+from .models import Guest, Booking, ServiceOrder
 from .schemas import (
     GuestCreate, GuestOut, BookingCreate, BookingOut, ChatIn,
 )
@@ -192,6 +194,67 @@ async def active_booking(
         .where(Booking.status == CHECKED_IN)
     )
     return result.scalars().first()
+
+@app.get("/bookings/{booking_id}/summary")
+async def booking_summary(
+    booking_id: str,
+    session: AsyncSession = Depends(get_session),
+):
+    b = await get_booking(session, booking_id)
+    if not b:
+        raise HTTPException(404, "booking not found")
+
+    guest = await get_guest(session, b.guest_id)
+
+    orders_res = await session.execute(
+        select(ServiceOrder).where(ServiceOrder.booking_id == booking_id)
+    )
+    orders = list(orders_res.scalars().all())
+
+    # nights: floor at 1 so demos look sane
+    if b.actual_check_in:
+        end = b.actual_check_out or datetime.utcnow()
+        delta_days = (end - b.actual_check_in).total_seconds() / 86400
+        nights = max(1, math.ceil(delta_days))
+    else:
+        nights = 1
+
+    ROOM_RATE_CENTS = 22000  # $220/night
+    room_charge_cents = nights * ROOM_RATE_CENTS
+    orders_charge_cents = sum(o.unit_price_cents * o.quantity for o in orders)
+    total_cents = room_charge_cents + orders_charge_cents
+
+    # rough carbon estimate for the demo
+    carbon_kg = round(nights * 8.0 + sum(o.quantity * 0.4 for o in orders), 2)
+
+    return {
+        "booking_id": b.id,
+        "status": b.status,
+        "guest": {
+            "id": guest.id if guest else None,
+            "name": guest.name if guest else None,
+            "email": guest.email if guest else None,
+        },
+        "check_in": b.actual_check_in.isoformat() if b.actual_check_in else None,
+        "check_out": b.actual_check_out.isoformat() if b.actual_check_out else None,
+        "nights": nights,
+        "room_charge_cents": room_charge_cents,
+        "orders": [
+            {
+                "id": o.id,
+                "item": o.item,
+                "quantity": o.quantity,
+                "unit_price_cents": o.unit_price_cents,
+                "line_total_cents": o.unit_price_cents * o.quantity,
+                "status": o.status,
+            }
+            for o in orders
+        ],
+        "orders_total_cents": orders_charge_cents,
+        "total_cents": total_cents,
+        "carbon_kg": carbon_kg,
+        "currency": "USD",
+    }
 
 @app.get("/bookings/{booking_id}", response_model=BookingOut)
 async def read_booking(

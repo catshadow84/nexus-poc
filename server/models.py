@@ -39,3 +39,19 @@ class Booking(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     guest: Mapped[Guest] = relationship(back_populates="bookings")
+
+
+class ServiceOrder(Base):
+    __tablename__ = "service_orders"
+
+    id: Mapped[str] = mapped_column(
+        String, primary_key=True, default=lambda: str(uuid4())
+    )
+    booking_id: Mapped[str] = mapped_column(
+        ForeignKey("bookings.id"), nullable=False
+    )
+    item: Mapped[str] = mapped_column(String, nullable=False)
+    quantity: Mapped[int] = mapped_column(default=1)
+    unit_price_cents: Mapped[int] = mapped_column(default=0)
+    status: Mapped[str] = mapped_column(String, default="placed")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

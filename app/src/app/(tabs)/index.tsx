@@ -8,7 +8,21 @@ import { router } from 'expo-router';
 const BACKEND_HTTP = 'http://10.21.152.142:8000';
 const BACKEND_WS = 'ws://10.21.152.142:8000/ws';
 
-
+async function doCheckout(bookingId: string, onSuccess: (id: string) => void) {
+  try {
+    const res = await fetch(`${BACKEND_HTTP}/bookings/${bookingId}/checkout`, {
+      method: 'POST',
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      Alert.alert('Checkout failed', text.slice(0, 240));
+      return;
+    }
+    onSuccess(bookingId);
+  } catch {
+    Alert.alert('Network error', 'Is the backend running?');
+  }
+}
 async function runScene(name: string) {
   try {
     const res = await fetch(`${BACKEND_HTTP}/scenes/${name}`, {
@@ -40,6 +54,7 @@ export default function HomeScreen() {
   const [state, setState] = useState<RoomState | null>(null);
   const [connected, setConnected] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
+  const [bookingId, setBookingId] = useState<string | null>(null);
 
   useEffect(() => {
     // initial state fetch
@@ -65,13 +80,15 @@ export default function HomeScreen() {
     fetch(`${BACKEND_HTTP}/bookings/active`)
   .then((r) => r.json())
   .then((b) => {
-    if (b && b.guest_id) {
+    if (b && b.id) {
+      setBookingId(b.id);
       fetch(`${BACKEND_HTTP}/guests/${b.guest_id}`)
         .then((r) => r.json())
         .then((g) => setGuestName(g.name))
         .catch(() => {});
     } else {
       setGuestName(null);
+      setBookingId(null);
     }
   })
   .catch(() => {});
@@ -118,6 +135,18 @@ export default function HomeScreen() {
       </View>
       {guestName && (
   <Text style={styles.welcome}>Welcome, {guestName}</Text>
+)}
+{guestName && (
+  <Pressable
+    style={styles.checkoutBtn}
+    onPress={() => {
+      if (bookingId) {
+        doCheckout(bookingId, (id) => router.push(`/summary?booking_id=${id}`));
+      }
+    }}
+  >
+    <Text style={styles.checkoutText}>Check out</Text>
+  </Pressable>
 )}
 
 
@@ -354,4 +383,19 @@ sceneIcon: {
   },
   chipActive: { backgroundColor: '#fff', borderColor: '#fff' },
   chipText: { color: '#888', fontSize: 12, letterSpacing: 1 },
+  checkoutBtn: {
+  backgroundColor: '#1a1a1a',
+  borderWidth: 1,
+  borderColor: '#333',
+  borderRadius: 10,
+  paddingVertical: 10,
+  alignItems: 'center',
+  marginTop: -12,
+  marginBottom: 20,
+},
+checkoutText: {
+  color: '#f87171',
+  fontSize: 13,
+  letterSpacing: 1,
+},
 });

@@ -203,8 +203,11 @@ async def handle_message(
         if not fn:
             log.warning("unknown tool %s", tool_name)
             continue
+        call_args = dict(args)
+        if booking_id and "booking_id" not in call_args:
+            call_args["booking_id"] = booking_id
         try:
-            result = await fn(session, **args)
+            result = await fn(session, **call_args)
             results.append({"tool": tool_name, "result": result})
         except Exception as e:
             log.exception("tool %s failed", tool_name)

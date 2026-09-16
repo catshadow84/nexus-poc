@@ -1,3 +1,4 @@
+from .models import ServiceOrder
 import logging
 from datetime import datetime
 from uuid import uuid4
@@ -14,8 +15,7 @@ from .booking_service import get_booking as _get_booking, check_out as _check_ou
 log = logging.getLogger("nora.tools")
 
 
-# in-memory stub store for service orders (persist later)
-SERVICE_ORDERS: dict[str, dict] = {}
+
 
 
 async def _issue_command(device_id: str, value: dict) -> dict:
@@ -61,18 +61,44 @@ async def tool_get_booking(session: AsyncSession, booking_id, **_):
     }
 
 
-async def tool_create_service_order(session, item, quantity=1, **_):
-    order_id = str(uuid4())
-    order = {
-        "id": order_id,
-        "item": item,
-        "quantity": int(quantity),
-        "status": "placed",
-        "created_at": datetime.utcnow().isoformat(),
+MENU = {
+    "coffee": 450,
+    "tea": 400,
+    "water": 200,
+    "sandwich": 1200,
+    "snack": 600,
+}
+
+
+async def tool_create_service_order(
+    session: AsyncSession,
+    item,
+    quantity=1,
+    booking_id=None,
+    **_,
+):
+    if not booking_id:
+        return {"error": "no active booking to attach this order to"}
+
+    price = MENU.get(item.lower(), 500)
+    order = ServiceOrder(
+        booking_id=booking_id,
+        item=item.lower(),
+        quantity=int(quantity),
+        unit_price_cents=price,
+        status="placed",
+    )
+    session.add(order)
+    await session.commit()
+    await session.refresh(order)
+    log.info("service order %s: %dx %s @ %d cents", order.id, order.quantity, order.item, price)
+    return {
+        "id": order.id,
+        "item": order.item,
+        "quantity": order.quantity,
+        "unit_price_cents": order.unit_price_cents,
+        "status": order.status,
     }
-    SERVICE_ORDERS[order_id] = order
-    log.info("service order created: %s", order)
-    return order
 
 
 async def tool_checkout(session: AsyncSession, booking_id, **_):
