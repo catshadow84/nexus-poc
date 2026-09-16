@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import { router } from 'expo-router';
 
-const BACKEND = 'http://10.21.146.115:8000';
+const BACKEND = 'http://10.21.152.142:8000';
 
 type Message = {
   role: 'user' | 'nora';
@@ -24,6 +24,42 @@ export default function NoraScreen() {
   const [busy, setBusy] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
 
+  const [guestName, setGuestName] = useState<string | null>(null);
+const [bookingId, setBookingId] = useState<string | null>(null);
+
+useEffect(() => {
+  console.log('NORA: fetching active booking...');
+  fetch(`${BACKEND}/bookings/active`)
+    .then((r) => {
+      console.log('NORA: active status', r.status);
+      return r.json();
+    })
+    .then((b) => {
+      console.log('NORA: active payload', b);
+      if (b && b.id) {
+        setBookingId(b.id);
+        fetch(`${BACKEND}/guests/${b.guest_id}`)
+          .then((r) => {
+            console.log('NORA: guest status', r.status);
+            return r.json();
+          })
+          .then((g) => {
+            console.log('NORA: guest payload', g);
+            setGuestName(g.name);
+            setMessages([
+              {
+                role: 'nora',
+                text: `Hi ${g.name.split(' ')[0]}, welcome back. What can I do for you?`,
+              },
+            ]);
+          })
+          .catch((e) => console.log('NORA: guest fetch error', e));
+      } else {
+        console.log('NORA: no active booking');
+      }
+    })
+    .catch((e) => console.log('NORA: active fetch error', e));
+}, []);
   useEffect(() => {
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
   }, [messages]);
@@ -38,7 +74,7 @@ export default function NoraScreen() {
       const res = await fetch(`${BACKEND}/nora/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ session_id: 'demo', message: text }),
+        body: JSON.stringify({ session_id: 'demo', message: text, booking_id: bookingId }),
       });
       const data = await res.json();
       setMessages((m) => [
@@ -64,7 +100,9 @@ export default function NoraScreen() {
         <Pressable onPress={() => router.back()} style={styles.back}>
           <Text style={styles.backText}>‹ Back</Text>
         </Pressable>
-        <Text style={styles.title}>NORA</Text>
+        <Text style={styles.title}>
+  NORA{guestName ? ` · ${guestName.split(' ')[0]}` : ''}
+</Text>
         <View style={styles.back} />
       </View>
 

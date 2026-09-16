@@ -5,8 +5,9 @@ import {
 import Slider from '@react-native-community/slider';
 import { router } from 'expo-router';
 
-const BACKEND_HTTP = 'http://10.21.146.115:8000';
-const BACKEND_WS = 'ws://10.21.146.115:8000/ws';
+const BACKEND_HTTP = 'http://10.21.152.142:8000';
+const BACKEND_WS = 'ws://10.21.152.142:8000/ws';
+
 
 async function runScene(name: string) {
   try {
@@ -35,6 +36,7 @@ type RoomState = {
 };
 
 export default function HomeScreen() {
+  const [guestName, setGuestName] = useState<string | null>(null);
   const [state, setState] = useState<RoomState | null>(null);
   const [connected, setConnected] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
@@ -60,6 +62,19 @@ export default function HomeScreen() {
         console.warn('bad ws message', err);
       }
     };
+    fetch(`${BACKEND_HTTP}/bookings/active`)
+  .then((r) => r.json())
+  .then((b) => {
+    if (b && b.guest_id) {
+      fetch(`${BACKEND_HTTP}/guests/${b.guest_id}`)
+        .then((r) => r.json())
+        .then((g) => setGuestName(g.name))
+        .catch(() => {});
+    } else {
+      setGuestName(null);
+    }
+  })
+  .catch(() => {});
     return () => { ws.close(); };
   }, []);
 
@@ -101,6 +116,10 @@ export default function HomeScreen() {
           {connected ? '● live' : '○ offline'}
         </Text>
       </View>
+      {guestName && (
+  <Text style={styles.welcome}>Welcome, {guestName}</Text>
+)}
+
 
       <View style={styles.sceneRow}>
   <Pressable style={styles.sceneBtn} onPress={() => runScene('good_morning')}>
@@ -297,6 +316,14 @@ sceneIcon: {
   dot: { fontSize: 12, letterSpacing: 1 },
   dotOn: { color: '#4ade80' },
   dotOff: { color: '#f87171' },
+
+  welcome: {
+    color: '#4ade80',
+    fontSize: 13,
+    letterSpacing: 1,
+    marginTop: -16,
+    marginBottom: 20,
+  },
 
   card: {
     backgroundColor: '#141414', borderRadius: 14,

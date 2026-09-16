@@ -181,6 +181,17 @@ async def create_booking(
     await session.refresh(booking)
     return booking
 
+@app.get("/bookings/active", response_model=BookingOut | None)
+async def active_booking(
+    room_id: str = "room1",
+    session: AsyncSession = Depends(get_session),
+):
+    result = await session.execute(
+        select(Booking)
+        .where(Booking.room_id == room_id)
+        .where(Booking.status == CHECKED_IN)
+    )
+    return result.scalars().first()
 
 @app.get("/bookings/{booking_id}", response_model=BookingOut)
 async def read_booking(
@@ -202,7 +213,6 @@ async def list_bookings(
 
 
 # ---------- check in / out ----------
-
 
 @app.post("/bookings/{booking_id}/checkin")
 async def do_check_in(
@@ -257,3 +267,4 @@ async def nora_chat(
         payload.message,
         booking_id=payload.booking_id,
     )
+

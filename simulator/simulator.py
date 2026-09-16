@@ -29,7 +29,7 @@ async def publish_state(client, device):
         "reported": state[device],
         "reported_at": datetime.utcnow().isoformat(),
     }
-    await client.publish(topic, json.dumps(payload))
+    await client.publish(topic, json.dumps(payload), retain = True)
     log.info("→ %s %s", device, state[device])
 
 

@@ -1,3 +1,4 @@
+from .booking_service import get_booking, get_guest
 import logging
 import re
 
@@ -25,9 +26,53 @@ Rules:
 
 # ---------- rules-based fallback (until Claude API key arrives) ----------
 
-def _fallback_plan(message: str) -> dict:
+def _first_name(full: str) -> str:
+    return full.strip().split()[0] if full.strip() else "there"
+
+
+def _fallback_plan(
+    message: str,
+    guest_name: str | None = None,
+    guest_prefs: dict | None = None,
+) -> dict:
     m = message.lower().strip()
+    name = _first_name(guest_name) if guest_name else None
+    prefs = guest_prefs or {}
     calls: list[tuple[str, dict]] = []
+
+    def addr(text: str) -> str:
+        return f"{name}, {text}" if name else text[0].upper() + text[1:]
+
+    # ---- identity / memory intents ----
+
+    if any(k in m for k in ("who am i", "do you know me", "my name", "remember me")):
+        if name:
+            prefs_summary = []
+            l = prefs.get("light") or {}
+            if l:
+                prefs_summary.append(
+                    f"light {l.get('brightness', '?')}% {l.get('color', '')}".strip()
+                )
+            t = prefs.get("thermostat") or {}
+            if t:
+                prefs_summary.append(f"thermostat {t.get('target_c', '?')}°C")
+            c = prefs.get("curtain") or {}
+            if c:
+                prefs_summary.append(f"curtain {c.get('open_pct', '?')}%")
+            summary = ", ".join(prefs_summary) if prefs_summary else "no preferences on file"
+            return {"reply": f"You're {guest_name}. Saved preferences: {summary}.", "calls": []}
+        return {"reply": "I don't have an active booking for you yet.", "calls": []}
+
+    if any(k in m for k in ("what do i like", "my preferences", "my settings")):
+        if prefs:
+            lines = []
+            for dev, v in prefs.items():
+                if isinstance(v, dict):
+                    lines.append(f"{dev}: " + ", ".join(f"{k}={val}" for k, val in v.items()))
+            return {"reply": "\n".join(lines), "calls": []}
+        return {"reply": "You don't have any preferences saved yet.", "calls": []}
+
+    # ---- scenes ----
 
     if any(k in m for k in ("goodnight", "good night", "going to sleep")):
         calls = [
@@ -35,7 +80,7 @@ def _fallback_plan(message: str) -> dict:
             ("set_curtain", {"open_pct": 0}),
             ("set_thermostat", {"target_c": 19, "mode": "cool"}),
         ]
-        return {"reply": "Goodnight. Light off, curtain closed, thermostat to 19.", "calls": calls}
+        return {"reply": addr("goodnight — light off, curtain closed, thermostat to 19."), "calls": calls}
 
     if "good morning" in m or "wake" in m:
         calls = [
@@ -43,9 +88,11 @@ def _fallback_plan(message: str) -> dict:
             ("set_curtain", {"open_pct": 70}),
             ("set_thermostat", {"target_c": 22, "mode": "cool"}),
         ]
-        return {"reply": "Good morning. Waking the room up.", "calls": calls}
+        return {"reply": addr("good morning — waking the room up."), "calls": calls}
 
-    if "curtain" in m or "blind" in m or "shade" in m:
+    # ---- device control (uses guest prefs as defaults) ----
+
+    if any(k in m for k in ("curtain", "blind", "shade")):
         nums = re.findall(r"(\d+)", m)
         if nums:
             pct = int(nums[0])
@@ -54,15 +101,13 @@ def _fallback_plan(message: str) -> dict:
         elif "open" in m:
             pct = 100
         else:
-            pct = 50
-        return {"reply": f"Curtain at {pct}%.", "calls": [("set_curtain", {"open_pct": pct})]}
+            pct = (prefs.get("curtain") or {}).get("open_pct", 50)
+        return {"reply": addr(f"curtain to {pct}%."), "calls": [("set_curtain", {"open_pct": pct})]}
 
     if any(k in m for k in ("cold", "freezing", "warm me", "hot", "temperature", "degrees", "thermostat")):
         state = store.snapshot()
-        current = (
-            (state.get("devices", {}).get("thermostat", {}).get("reported") or {})
-            .get("target_c", 22.0)
-        )
+        current = (state.get("devices", {}).get("thermostat", {}).get("reported") or {}).get("target_c", 22.0)
+        default_pref = (prefs.get("thermostat") or {}).get("target_c")
         nums = re.findall(r"(\d+(?:\.\d+)?)", m)
         if nums:
             target = float(nums[0])
@@ -70,26 +115,35 @@ def _fallback_plan(message: str) -> dict:
             target = current + 2
         elif "hot" in m:
             target = current - 2
+        elif default_pref is not None:
+            target = float(default_pref)
         else:
             target = current
         return {
-            "reply": f"Setting the thermostat to {target}°C.",
+            "reply": addr(f"setting the thermostat to {target}°C."),
             "calls": [("set_thermostat", {"target_c": target, "mode": "cool"})],
         }
 
     if any(k in m for k in ("light", "lamp", "dark", "bright")):
+        lp = prefs.get("light") or {}
         if "off" in m or "dark" in m:
-            calls = [("set_light", {"power": "off", "brightness": 0, "color": "neutral"})]
-            return {"reply": "Turning the lights off.", "calls": calls}
+            return {"reply": addr("turning the lights off."),
+                    "calls": [("set_light", {"power": "off", "brightness": 0, "color": "neutral"})]}
         if "cool" in m:
-            calls = [("set_light", {"power": "on", "brightness": 100, "color": "cool"})]
-            return {"reply": "Setting the light to cool.", "calls": calls}
+            return {"reply": addr("setting the light cool."),
+                    "calls": [("set_light", {"power": "on", "brightness": 100, "color": "cool"})]}
         if "warm" in m:
-            calls = [("set_light", {"power": "on", "brightness": 60, "color": "warm"})]
-            return {"reply": "Setting the light to warm.", "calls": calls}
-        if "off" not in m:
-            calls = [("set_light", {"power": "on", "brightness": 80, "color": "warm"})]
-            return {"reply": "Lights on.", "calls": calls}
+            return {"reply": addr("setting the light warm."),
+                    "calls": [("set_light", {"power": "on", "brightness": 60, "color": "warm"})]}
+        # "turn on the lights" — use guest prefs
+        return {"reply": addr("lights on."),
+                "calls": [("set_light", {
+                    "power": "on",
+                    "brightness": lp.get("brightness", 80),
+                    "color": lp.get("color", "warm"),
+                })]}
+
+    # ---- service ----
 
     if any(k in m for k in ("coffee", "tea", "water", "food", "order", "room service", "snack", "sandwich")):
         item = "coffee"
@@ -98,9 +152,11 @@ def _fallback_plan(message: str) -> dict:
                 item = cand
                 break
         return {
-            "reply": f"Ordering {item} for you. It'll be up shortly.",
+            "reply": addr(f"ordering {item} — it'll be up shortly."),
             "calls": [("create_service_order", {"item": item, "quantity": 1})],
         }
+
+    # ---- state ----
 
     if any(k in m for k in ("how", "what", "state", "status", "currently")):
         s = store.snapshot()
@@ -114,12 +170,10 @@ def _fallback_plan(message: str) -> dict:
             f"Thermostat at {thermo.get('current_c', '?')}°C, target {thermo.get('target_c', '?')}°C. "
             f"Curtain {cur.get('open_pct', '?')}% open."
         )
-        return {"reply": reply, "calls": []}
+        return {"reply": addr(reply), "calls": []}
 
-    return {
-        "reply": "I can control the light, thermostat, and curtain, place service orders, and check you out. What would you like?",
-        "calls": [],
-    }
+    default = "I can control the light, thermostat, and curtain, place service orders, and check you out. What would you like?"
+    return {"reply": f"{name}, {default[0].lower() + default[1:]}" if name else default, "calls": []}
 
 
 # ---------- public API ----------
@@ -130,13 +184,18 @@ async def handle_message(
     message: str,
     booking_id: str | None = None,
 ) -> dict:
-    """Main entry point.
+    # load guest context if a booking is attached
+    guest_name: str | None = None
+    guest_prefs: dict = {}
+    if booking_id:
+        booking = await get_booking(session, booking_id)
+        if booking and booking.status == "CHECKED_IN":
+            guest = await get_guest(session, booking.guest_id)
+            if guest:
+                guest_name = guest.name
+                guest_prefs = guest.preferences or {}
 
-    Today: uses the rules-based fallback.
-    Later: swap the line below for a Claude tool-use loop. Everything else
-    in this function stays identical.
-    """
-    plan = _fallback_plan(message)
+    plan = _fallback_plan(message, guest_name, guest_prefs)
 
     results = []
     for tool_name, args in plan["calls"]:
@@ -155,4 +214,5 @@ async def handle_message(
         "reply": plan["reply"],
         "actions": results,
         "session_id": session_id,
+        "guest_name": guest_name,
     }
