@@ -3,9 +3,9 @@ import {
   Text, View, TextInput, Pressable, ScrollView, StyleSheet,
   KeyboardAvoidingView, Platform,
 } from 'react-native';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 
-const BACKEND = 'http://192.168.10.30:8000';
+const BACKEND = 'http://10.21.152.142:8000';
 
 type Message = {
   role: 'user' | 'nora';
@@ -14,6 +14,8 @@ type Message = {
 };
 
 export default function NoraScreen() {
+  const params = useLocalSearchParams<{ room_id?: string }>();
+const roomId = params.room_id ?? 'room1';
   const [messages, setMessages] = useState<Message[]>([
     {
       role: 'nora',
@@ -29,7 +31,7 @@ const [bookingId, setBookingId] = useState<string | null>(null);
 
 useEffect(() => {
   console.log('NORA: fetching active booking...');
-  fetch(`${BACKEND}/bookings/active?room_id=room1`)
+  fetch(`${BACKEND}/bookings/active?room_id=${roomId}`)
     .then((r) => {
       console.log('NORA: active status', r.status);
       return r.json();
@@ -59,7 +61,7 @@ useEffect(() => {
       }
     })
     .catch((e) => console.log('NORA: active fetch error', e));
-}, []);
+}, [roomId]);
   useEffect(() => {
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
   }, [messages]);
@@ -74,7 +76,7 @@ useEffect(() => {
       const res = await fetch(`${BACKEND}/nora/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ session_id: 'demo', message: text, booking_id: bookingId, room_id: 'room1' }),
+        body: JSON.stringify({ session_id: 'demo', message: text, booking_id: bookingId, room_id: roomId }),
       });
       const data = await res.json();
       setMessages((m) => [

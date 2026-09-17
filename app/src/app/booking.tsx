@@ -1,9 +1,10 @@
 import { useState } from 'react';
+import { useLocalSearchParams } from 'expo-router';
 import {
   Text, View, TextInput, Pressable, StyleSheet, ScrollView, Alert,
 } from 'react-native';
 
-const BACKEND = 'http://192.168.10.30:8000';
+const BACKEND = 'http://10.21.152.142:8000';
 
 function buildPreferences(name: string) {
   const hash = name.split('').reduce((a, c) => a + c.charCodeAt(0), 0);
@@ -28,6 +29,8 @@ function buildPreferences(name: string) {
 }
 
 export default function BookingScreen() {
+  const params = useLocalSearchParams<{ room_id?: string }>();
+  const roomId = params.room_id ?? 'room1';
   const [name, setName] = useState('Sarah Khoury');
   const [email, setEmail] = useState('');
   const [busy, setBusy] = useState(false);
@@ -54,14 +57,14 @@ export default function BookingScreen() {
       const bookingRes = await fetch(`${BACKEND}/bookings`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ guest_id: guest.id, room_id: 'room1' }),
+        body: JSON.stringify({ guest_id: guest.id, room_id: roomId }),
       });
       if (!bookingRes.ok) throw new Error(`booking: ${await bookingRes.text()}`);
       const booking = await bookingRes.json();
       
       // pre-step: if a booking is already checked in, check it out so the room is free
 try {
-  const activeRes = await fetch(`${BACKEND}/bookings/active?room_id=room1`);;
+  const activeRes = await fetch(`${BACKEND}/bookings/active?room_id=${roomId}`);
   if (activeRes.ok) {
     const active = await activeRes.json();
     if (active && active.id) {

@@ -5,8 +5,8 @@ import {
 import Slider from '@react-native-community/slider';
 import { router } from 'expo-router';
 
-const BACKEND_HTTP = 'http://192.168.10.30:8000';
-const BACKEND_WS = 'ws://192.168.10.30:8000/ws';
+const BACKEND_HTTP = 'http://10.21.152.142:8000';
+const BACKEND_WS = 'ws://10.21.152.142:8000/ws';
 
 async function doCheckout(bookingId: string, onSuccess: (id: string) => void) {
   try {
@@ -23,19 +23,7 @@ async function doCheckout(bookingId: string, onSuccess: (id: string) => void) {
     Alert.alert('Network error', 'Is the backend running?');
   }
 }
-async function runScene(name: string) {
-  try {
-    const res = await fetch(`${BACKEND_HTTP}/rooms/room1/scenes/${name}`, {
-      method: 'POST',
-    });
-    if (!res.ok) {
-      const text = await res.text();
-      Alert.alert('Scene failed', text.slice(0, 240));
-    }
-  } catch {
-    Alert.alert('Network error', 'Is the backend running?');
-  }
-}
+
 
 type DeviceState = {
   desired?: Record<string, any> | null;
@@ -55,49 +43,57 @@ export default function HomeScreen() {
   const [connected, setConnected] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
   const [bookingId, setBookingId] = useState<string | null>(null);
+  const [roomId, setRoomId] = useState<'room1' | 'room2'>('room1');
 
   useEffect(() => {
-    // initial state fetch
-    fetch(`${BACKEND_HTTP}/rooms/room1/state`)
-      .then((r) => r.json())
-      .then(setState)
-      .catch((e) => console.warn('initial fetch failed', e));
+  setConnected(false);
+  setState(null);
+  setGuestName(null);
+  setBookingId(null);
 
-    // websocket for live updates
-    const ws = new WebSocket(BACKEND_WS);
-    wsRef.current = ws;
-    ws.onopen = () => setConnected(true);
-    ws.onclose = () => setConnected(false);
-    ws.onerror = () => setConnected(false);
-    ws.onmessage = (e) => {
-      try {
-        const msg = JSON.parse(e.data);
-        if (msg.type === 'state') setState(msg.data);
-      } catch (err) {
-        console.warn('bad ws message', err);
-      }
-    };
-    fetch(`${BACKEND_HTTP}/bookings/active?room_id=room1`)
-  .then((r) => r.json())
-  .then((b) => {
-    if (b && b.id) {
-      setBookingId(b.id);
-      fetch(`${BACKEND_HTTP}/guests/${b.guest_id}`)
-        .then((r) => r.json())
-        .then((g) => setGuestName(g.name))
-        .catch(() => {});
-    } else {
-      setGuestName(null);
-      setBookingId(null);
+  // initial state fetch
+  fetch(`${BACKEND_HTTP}/rooms/${roomId}/state`)
+    .then((r) => r.json())
+    .then(setState)
+    .catch((e) => console.warn('initial fetch failed', e));
+
+  // websocket
+  const ws = new WebSocket(`${BACKEND_WS}?room_id=${roomId}`);
+  wsRef.current = ws;
+  ws.onopen = () => setConnected(true);
+  ws.onclose = () => setConnected(false);
+  ws.onerror = () => setConnected(false);
+  ws.onmessage = (e) => {
+    try {
+      const msg = JSON.parse(e.data);
+      if (msg.type === 'state') setState(msg.data);
+    } catch (err) {
+      console.warn('bad ws message', err);
     }
-  })
-  .catch(() => {});
-    return () => { ws.close(); };
-  }, []);
+  };
+
+  // active booking
+  fetch(`${BACKEND_HTTP}/bookings/active?room_id=${roomId}`)
+    .then((r) => r.json())
+    .then((b) => {
+      if (b && b.id) {
+        setBookingId(b.id);
+        fetch(`${BACKEND_HTTP}/guests/${b.guest_id}`)
+          .then((r) => r.json())
+          .then((g) => setGuestName(g.name))
+          .catch(() => {});
+      }
+    })
+    .catch(() => {});
+
+  return () => {
+    ws.close();
+  };
+}, [roomId]);
 
   async function sendCommand(device: string, value: Record<string, any>) {
     try {
-      const res = await fetch(`${BACKEND_HTTP}/rooms/room1/device/${device}/command`, {
+      const res = await fetch(`${BACKEND_HTTP}/rooms/${roomId}/device/${device}/command`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(value),
@@ -111,6 +107,20 @@ export default function HomeScreen() {
       Alert.alert('Network error', 'Is the backend running?');
     }
   }
+
+  async function runScene(name: string) {
+  try {
+    const res = await fetch(`${BACKEND_HTTP}/rooms/${roomId}/scenes/${name}`, {
+      method: 'POST',
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      Alert.alert('Scene failed', text.slice(0, 240));
+    }
+  } catch {
+    Alert.alert('Network error', 'Is the backend running?');
+  }
+}
 
   if (!state || !state.devices) {
   return (
@@ -133,6 +143,19 @@ export default function HomeScreen() {
           {connected ? '● live' : '○ offline'}
         </Text>
       </View>
+      <View style={styles.roomRow}>
+  {(['room1', 'room2'] as const).map((r) => (
+    <Pressable
+      key={r}
+      style={[styles.roomPill, roomId === r && styles.roomPillActive]}
+      onPress={() => setRoomId(r)}
+    >
+      <Text style={[styles.roomLabel, roomId === r && styles.roomLabelActive]}>
+        Room {r.replace('room', '')}
+      </Text>
+    </Pressable>
+  ))}
+</View>
       {guestName && (
   <Text style={styles.welcome}>Welcome, {guestName}</Text>
 )}
@@ -170,14 +193,14 @@ export default function HomeScreen() {
       <View style={styles.actionRow}>
   <Pressable
     style={[styles.actionBtn, styles.actionBtnLeft]}
-    onPress={() => router.push('/nora')}
+    onPress={() => router.push(`/nora?room_id=${roomId}`)}
   >
     <Text style={styles.actionLabel}>Ask NORA</Text>
     <Text style={styles.actionIcon}>◉</Text>
   </Pressable>
   <Pressable
     style={styles.actionBtn}
-    onPress={() => router.push('/booking')}
+    onPress={() => router.push(`/booking?room_id=${roomId}`)}
   >
     <Text style={styles.actionLabel}>Book a stay</Text>
     <Text style={styles.actionIcon}>→</Text>
@@ -337,6 +360,33 @@ sceneIcon: {
     flexDirection: 'row', justifyContent: 'space-between',
     alignItems: 'baseline', marginBottom: 24,
   },
+  roomRow: {
+  flexDirection: 'row',
+  gap: 8,
+  marginBottom: 16,
+  marginTop: -12,
+},
+roomPill: {
+  flex: 1,
+  paddingVertical: 8,
+  borderRadius: 20,
+  borderWidth: 1,
+  borderColor: '#333',
+  alignItems: 'center',
+},
+roomPillActive: {
+  backgroundColor: '#fff',
+  borderColor: '#fff',
+},
+roomLabel: {
+  color: '#888',
+  fontSize: 12,
+  letterSpacing: 2,
+},
+roomLabelActive: {
+  color: '#000',
+  fontWeight: '700',
+},
   brand: {
     color: '#fff', fontSize: 32, fontWeight: 'bold',
     letterSpacing: 6,
