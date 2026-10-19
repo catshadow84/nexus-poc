@@ -1,10 +1,10 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useLocalSearchParams } from 'expo-router';
 import {
   Text, View, TextInput, Pressable, StyleSheet, ScrollView, Alert,
 } from 'react-native';
 
-const BACKEND = 'http://10.21.152.142:8000';
+const BACKEND = 'http://10.91.221.234:8000';
 
 function buildPreferences(name: string) {
   const hash = name.split('').reduce((a, c) => a + c.charCodeAt(0), 0);
@@ -31,10 +31,38 @@ function buildPreferences(name: string) {
 export default function BookingScreen() {
   const params = useLocalSearchParams<{ room_id?: string }>();
   const roomId = params.room_id ?? 'room1';
+  const [returning, setReturning] = useState<null | { name: string; stayCount: number }>(null);
   const [name, setName] = useState('Sarah Khoury');
   const [email, setEmail] = useState('');
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<string | null>(null);
+
+  useEffect(() => {
+  if (!email || !email.includes('@')) {
+    setReturning(null);
+    return;
+  }
+  const t = setTimeout(() => {
+    fetch(`${BACKEND}/guests/lookup?email=${encodeURIComponent(email)}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.found) {
+          setReturning({
+            name: data.guest.name,
+            stayCount: data.stay_count,
+          });
+          // pre-fill the name if it's still the default
+          if (name === 'Sarah Khoury' || !name.trim()) {
+            setName(data.guest.name);
+          }
+        } else {
+          setReturning(null);
+        }
+      })
+      .catch(() => setReturning(null));
+  }, 400);
+  return () => clearTimeout(t);
+}, [email]);
 
   async function runScenario() {
     setBusy(true);
@@ -42,14 +70,14 @@ export default function BookingScreen() {
     try {
       // 1. create guest
       const guestRes = await fetch(`${BACKEND}/guests`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name,
-          email,
-          preferences: buildPreferences(name),
-        }),
-      });
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    name,
+    email,
+    preferences: returning ? {} : buildPreferences(name),
+  }),
+});
       if (!guestRes.ok) throw new Error(`guest: ${await guestRes.text()}`);
       const guest = await guestRes.json();
 
@@ -95,7 +123,11 @@ try {
   return (
     <ScrollView style={styles.scroll} contentContainerStyle={styles.inner}>
       <Text style={styles.brand}>NEXUS</Text>
-      <Text style={styles.subtitle}>New stay</Text>
+      <Text style={styles.subtitle}>
+  {returning
+    ? `Welcome back, ${returning.name.split(' ')[0]}. ${returning.stayCount} previous stay${returning.stayCount === 1 ? '' : 's'}.`
+    : 'New stay'}
+</Text>
 
       <Text style={styles.label}>Name</Text>
       <TextInput
@@ -130,6 +162,13 @@ try {
 }
 
 const styles = StyleSheet.create({
+  subtitleReturning: {
+  color: '#4ade80',
+  marginTop: 8,
+  marginBottom: 32,
+  letterSpacing: 1,
+  fontSize: 13,
+},
   scroll: { flex: 1, backgroundColor: '#0a0a0a' },
   inner: { padding: 24, paddingTop: 72 },
   brand: { color: '#fff', fontSize: 36, fontWeight: 'bold', letterSpacing: 8 },

@@ -5,8 +5,8 @@ import {
 import Slider from '@react-native-community/slider';
 import { router } from 'expo-router';
 
-const BACKEND_HTTP = 'http://10.21.152.142:8000';
-const BACKEND_WS = 'ws://10.21.152.142:8000/ws';
+const BACKEND_HTTP = 'http://10.91.221.234:8000';
+const BACKEND_WS = 'ws://10.91.221.234:8000/ws';
 
 async function doCheckout(bookingId: string, onSuccess: (id: string) => void) {
   try {

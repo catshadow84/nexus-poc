@@ -4,7 +4,7 @@ import {
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 
-const BACKEND = 'http://10.21.152.142:8000';
+const BACKEND = 'http://10.91.221.234:8000';
 
 type Order = {
   id: string;

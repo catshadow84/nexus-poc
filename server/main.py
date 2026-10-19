@@ -129,25 +129,61 @@ async def create_guest(
 ):
     # if a guest with this email exists, update their preferences and return
     existing = await session.execute(
-        select(Guest).where(Guest.email == payload.email)
+        select(Guest).where(Guest.email == payload.email.lower())
     )
     guest = existing.scalar_one_or_none()
     if guest:
         guest.name = payload.name
-        guest.preferences = payload.preferences
+        # only overwrite preferences if explicitly provided (non-empty)
+        if payload.preferences:
+            guest.preferences = payload.preferences
         await session.commit()
         await session.refresh(guest)
         return guest
 
     guest = Guest(
         name=payload.name,
-        email=payload.email,
+        email=payload.email.lower(),
         preferences=payload.preferences,
     )
     session.add(guest)
     await session.commit()
     await session.refresh(guest)
     return guest
+
+@app.get("/guests/lookup")
+async def lookup_guest(
+    email: str,
+    session: AsyncSession = Depends(get_session),
+):
+    result = await session.execute(
+        select(Guest).where(Guest.email == email.lower())
+    )
+    guest = result.scalar_one_or_none()
+    if not guest:
+        return {"found": False}
+
+    stays_res = await session.execute(
+        select(Booking)
+        .where(Booking.guest_id == guest.id)
+        .where(Booking.status == "CHECKED_OUT")
+        .order_by(Booking.actual_check_out.desc())
+    )
+    stays = list(stays_res.scalars().all())
+
+    return {
+        "found": True,
+        "guest": {
+            "id": guest.id,
+            "name": guest.name,
+            "email": guest.email,
+            "preferences": guest.preferences,
+        },
+        "stay_count": len(stays),
+        "last_stay": (
+            stays[0].actual_check_out.isoformat() if stays and stays[0].actual_check_out else None
+        ),
+    }
 
 
 @app.get("/guests/{guest_id}", response_model=GuestOut)
@@ -335,5 +371,6 @@ async def nora_chat(
         payload.session_id,
         payload.message,
         booking_id=payload.booking_id,
+        room_id=payload.room_id,
     )
 
