@@ -4,13 +4,12 @@ import {
 } from 'react-native';
 import Slider from '@react-native-community/slider';
 import { router } from 'expo-router';
+import { API_URL, WS_URL } from '@/config';
 
-const BACKEND_HTTP = 'http://10.91.221.234:8000';
-const BACKEND_WS = 'ws://10.91.221.234:8000/ws';
 
 async function doCheckout(bookingId: string, onSuccess: (id: string) => void) {
   try {
-    const res = await fetch(`${BACKEND_HTTP}/bookings/${bookingId}/checkout`, {
+    const res = await fetch(`${API_URL}/bookings/${bookingId}/checkout`, {
       method: 'POST',
     });
     if (!res.ok) {
@@ -52,13 +51,13 @@ export default function HomeScreen() {
   setBookingId(null);
 
   // initial state fetch
-  fetch(`${BACKEND_HTTP}/rooms/${roomId}/state`)
+  fetch(`${API_URL}/rooms/${roomId}/state`)
     .then((r) => r.json())
     .then(setState)
     .catch((e) => console.warn('initial fetch failed', e));
 
   // websocket
-  const ws = new WebSocket(`${BACKEND_WS}?room_id=${roomId}`);
+  const ws = new WebSocket(`${WS_URL}?room_id=${roomId}`);
   wsRef.current = ws;
   ws.onopen = () => setConnected(true);
   ws.onclose = () => setConnected(false);
@@ -73,12 +72,12 @@ export default function HomeScreen() {
   };
 
   // active booking
-  fetch(`${BACKEND_HTTP}/bookings/active?room_id=${roomId}`)
+  fetch(`${API_URL}/bookings/active?room_id=${roomId}`)
     .then((r) => r.json())
     .then((b) => {
       if (b && b.id) {
         setBookingId(b.id);
-        fetch(`${BACKEND_HTTP}/guests/${b.guest_id}`)
+        fetch(`${API_URL}/guests/${b.guest_id}`)
           .then((r) => r.json())
           .then((g) => setGuestName(g.name))
           .catch(() => {});
@@ -93,7 +92,7 @@ export default function HomeScreen() {
 
   async function sendCommand(device: string, value: Record<string, any>) {
     try {
-      const res = await fetch(`${BACKEND_HTTP}/rooms/${roomId}/device/${device}/command`, {
+      const res = await fetch(`${API_URL}/rooms/${roomId}/device/${device}/command`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(value),
@@ -110,7 +109,7 @@ export default function HomeScreen() {
 
   async function runScene(name: string) {
   try {
-    const res = await fetch(`${BACKEND_HTTP}/rooms/${roomId}/scenes/${name}`, {
+    const res = await fetch(`${API_URL}/rooms/${roomId}/scenes/${name}`, {
       method: 'POST',
     });
     if (!res.ok) {

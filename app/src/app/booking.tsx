@@ -3,8 +3,9 @@ import { useLocalSearchParams } from 'expo-router';
 import {
   Text, View, TextInput, Pressable, StyleSheet, ScrollView, Alert,
 } from 'react-native';
+import { API_URL } from '@/config';
 
-const BACKEND = 'http://10.91.221.234:8000';
+
 
 function buildPreferences(name: string) {
   const hash = name.split('').reduce((a, c) => a + c.charCodeAt(0), 0);
@@ -43,7 +44,7 @@ export default function BookingScreen() {
     return;
   }
   const t = setTimeout(() => {
-    fetch(`${BACKEND}/guests/lookup?email=${encodeURIComponent(email)}`)
+    fetch(`${API_URL}/guests/lookup?email=${encodeURIComponent(email)}`)
       .then((r) => r.json())
       .then((data) => {
         if (data.found) {
@@ -69,7 +70,7 @@ export default function BookingScreen() {
     setResult(null);
     try {
       // 1. create guest
-      const guestRes = await fetch(`${BACKEND}/guests`, {
+      const guestRes = await fetch(`${API_URL}/guests`, {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({
@@ -82,7 +83,7 @@ export default function BookingScreen() {
       const guest = await guestRes.json();
 
       // 2. create booking
-      const bookingRes = await fetch(`${BACKEND}/bookings`, {
+      const bookingRes = await fetch(`${API_URL}/bookings`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ guest_id: guest.id, room_id: roomId }),
@@ -92,11 +93,11 @@ export default function BookingScreen() {
       
       // pre-step: if a booking is already checked in, check it out so the room is free
 try {
-  const activeRes = await fetch(`${BACKEND}/bookings/active?room_id=${roomId}`);
+  const activeRes = await fetch(`${API_URL}/bookings/active?room_id=${roomId}`);
   if (activeRes.ok) {
     const active = await activeRes.json();
     if (active && active.id) {
-      await fetch(`${BACKEND}/bookings/${active.id}/checkout`, {
+      await fetch(`${API_URL}/bookings/${active.id}/checkout`, {
         method: 'POST',
       });
     }
@@ -106,7 +107,7 @@ try {
 }
       // 3. check in
       const ciRes = await fetch(
-        `${BACKEND}/bookings/${booking.id}/checkin`,
+        `${API_URL}/bookings/${booking.id}/checkin`,
         { method: 'POST' }
       );
       if (!ciRes.ok) throw new Error(`checkin: ${await ciRes.text()}`);
