@@ -1,6 +1,4 @@
 import logging
-from datetime import datetime
-
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -9,7 +7,7 @@ from .state import get_store
 from .devices import get_registry
 from .mqtt_bus import bus
 from .broadcast import broadcaster
-
+from .timeutil import utcnow
 
 log = logging.getLogger("booking")
 
@@ -92,7 +90,7 @@ async def check_in(session: AsyncSession, booking: Booking) -> dict:
     if occupied.scalars().first():
         raise ValueError(f"Room {booking.room_id} is occupied")
     booking.status = CHECKED_IN
-    booking.actual_check_in = datetime.utcnow()
+    booking.actual_check_in = utcnow()
 
     guest = await get_guest(session, booking.guest_id)
     applied = await _apply_preferences(booking.room_id, guest) if guest else []
@@ -106,7 +104,7 @@ async def check_out(session: AsyncSession, booking: Booking) -> dict:
         raise ValueError("Booking is not checked in")
 
     booking.status = CHECKED_OUT
-    booking.actual_check_out = datetime.utcnow()
+    booking.actual_check_out = utcnow()
     await _reset_room(booking.room_id)
     await session.commit()
     return {"reset": True}

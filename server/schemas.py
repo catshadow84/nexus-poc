@@ -2,6 +2,7 @@ from pydantic import BaseModel, Field, EmailStr
 from typing import Literal, Optional
 from uuid import UUID, uuid4
 from datetime import datetime
+from .timeutil import utcnow
 
 
 DeviceId = Literal["light", "thermostat", "curtain"]
@@ -11,13 +12,13 @@ class CommandPayload(BaseModel):
     id: UUID = Field(default_factory=uuid4)
     action: Literal["set"] = "set"
     value: dict
-    issued_at: datetime = Field(default_factory=datetime.utcnow)
+    issued_at: datetime = Field(default_factory=utcnow)
 
 
 class ReportedState(BaseModel):
     id: UUID
     reported: dict
-    reported_at: datetime = Field(default_factory=datetime.utcnow)
+    reported_at: datetime = Field(default_factory=utcnow)
 
 
 class LightValue(BaseModel):

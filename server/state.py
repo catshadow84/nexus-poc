@@ -1,8 +1,7 @@
-from datetime import datetime
 from uuid import UUID
 
 from .schemas import RoomState, DeviceState, DeviceId
-
+from .timeutil import utcnow
 
 class StateStore:
     def __init__(self, room_id: str):
@@ -15,12 +14,12 @@ class StateStore:
         ds = self.room.devices[device]
         ds.desired = value
         ds.last_command_id = command_id
-        ds.last_updated = datetime.utcnow()
+        ds.last_updated = utcnow()
 
     def set_reported(self, device: DeviceId, value: dict):
         ds = self.room.devices[device]
         ds.reported = value
-        ds.last_updated = datetime.utcnow()
+        ds.last_updated = utcnow()
 
     def is_in_sync(self, device: DeviceId) -> bool:
         ds = self.room.devices[device]

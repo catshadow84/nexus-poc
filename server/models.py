@@ -5,6 +5,7 @@ from sqlalchemy import String, DateTime, ForeignKey, JSON
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .db import Base
+from .timeutil import utcnow
 
 
 class Guest(Base):
@@ -16,7 +17,7 @@ class Guest(Base):
     name: Mapped[str] = mapped_column(String, nullable=False)
     email: Mapped[str] = mapped_column(String, unique=True, nullable=False)
     preferences: Mapped[dict] = mapped_column(JSON, default=dict)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
     bookings: Mapped[list["Booking"]] = relationship(back_populates="guest")
 
@@ -36,7 +37,7 @@ class Booking(Base):
     actual_check_in: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     actual_check_out: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
     guest: Mapped[Guest] = relationship(back_populates="bookings")
 
@@ -54,4 +55,4 @@ class ServiceOrder(Base):
     quantity: Mapped[int] = mapped_column(default=1)
     unit_price_cents: Mapped[int] = mapped_column(default=0)
     status: Mapped[str] = mapped_column(String, default="placed")
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)

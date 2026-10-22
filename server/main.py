@@ -1,4 +1,3 @@
-from datetime import datetime
 import math
 from .nora import handle_message
 from .scenes import apply_scene, list_scenes
@@ -27,7 +26,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from .mqtt_bus import bus
 from .state import get_store, all_stores
 from .devices import get_registry
-
+from .timeutil import utcnow
 
 logging.basicConfig(level=logging.INFO)
 
@@ -251,7 +250,7 @@ async def booking_summary(
 
     # nights: floor at 1 so demos look sane
     if b.actual_check_in:
-        end = b.actual_check_out or datetime.utcnow()
+        end = b.actual_check_out or utcnow()
         delta_days = (end - b.actual_check_in).total_seconds() / 86400
         nights = max(1, math.ceil(delta_days))
     else:
