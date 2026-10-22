@@ -33,7 +33,8 @@ copy .env.example .env.local
 
 Open `app/.env.local` and set `EXPO_PUBLIC_API_URL`:
 
-- Emulator or web on the same computer: `http://localhost:8000`
+   - Android emulator: `http://10.0.2.2:8000` (the emulator's name for your computer; `localhost` will not work)
+   - iOS simulator or web on the same computer: `http://localhost:8000`
 - Physical phone: your computer's LAN address, for example `http://192.168.1.20:8000`. Find it by running `ipconfig` and reading the IPv4 Address. The phone and computer must be on the same Wi-Fi.
 
 ## Running
