@@ -65,9 +65,14 @@ export default function BookingScreen() {
   return () => clearTimeout(t);
 }, [email]);
 
-  async function runScenario() {
-    setBusy(true);
-    setResult(null);
+   async function runScenario() {
+     const cleanEmail = email.trim();
+     if (!cleanEmail || !cleanEmail.includes('@')) {
+       Alert.alert('Email needed', 'Please enter a valid email address.');
+       return;
+     }
+     setBusy(true);
+     setResult(null);
     try {
       // 1. create guest
       const guestRes = await fetch(`${API_URL}/guests`, {
@@ -75,7 +80,7 @@ export default function BookingScreen() {
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({
     name,
-    email,
+    email: cleanEmail,
     preferences: returning ? {} : buildPreferences(name),
   }),
 });
