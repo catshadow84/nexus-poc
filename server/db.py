@@ -1,3 +1,7 @@
+import os
+from pathlib import Path
+
+from dotenv import load_dotenv
 from sqlalchemy.ext.asyncio import (
     create_async_engine,
     async_sessionmaker,
@@ -5,8 +9,9 @@ from sqlalchemy.ext.asyncio import (
 )
 from sqlalchemy.orm import DeclarativeBase
 
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
-DATABASE_URL = "sqlite+aiosqlite:///./nexus.db"
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./nexus.db")
 
 engine = create_async_engine(DATABASE_URL, echo=False)
 SessionLocal = async_sessionmaker(engine, expire_on_commit=False)
