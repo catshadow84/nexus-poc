@@ -24,12 +24,3 @@ class Base(DeclarativeBase):
 async def get_session() -> AsyncSession:
     async with SessionLocal() as session:
         yield session
-
-
-async def init_db():
-    """Create all tables. Call once at startup."""
-    # import models so their metadata is registered
-    from . import models  # noqa: F401
-
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)

@@ -48,7 +48,15 @@ Use four terminals, started in this order. Terminals 2 and 3 need the virtual en
 
 Check the backend at http://localhost:8000/health (it should return `{"status":"ok"}`). Interactive API docs are at http://localhost:8000/docs.
 
-The SQLite database `nexus.db` is created in the folder where the backend is started (the repository root). It is ignored by Git. Delete it to start from a clean state.
+The backend uses PostgreSQL. Install it, create a `nexus` database and user, then copy `.env.example` to `.env` and set `DATABASE_URL`. Create or update the tables with:
+
+```powershell
+alembic upgrade head
+```
+
+After changing `server/models.py`, generate a migration with `alembic revision --autogenerate -m "describe the change"`, review the new file in `migrations/versions/`, then run `alembic upgrade head`.
+
+Automated tests use a temporary SQLite database and don't need Postgres.
 
 ## Tests
 

@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import Depends
 
-from .db import init_db, get_session
+from .db import get_session
 from .models import Guest, Booking, ServiceOrder
 from .schemas import (
     GuestCreate, GuestOut, BookingCreate, BookingOut, ChatIn,
@@ -33,7 +33,6 @@ logging.basicConfig(level=logging.INFO)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    await init_db()
     await bus.start()
 
     async def handle_state(topic: str, payload: dict):
