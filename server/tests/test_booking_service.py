@@ -112,3 +112,19 @@ async def test_room_is_free_again_after_check_out(session, make_booking):
     await check_out(session, first)
     await check_in(session, second)
     assert second.status == CHECKED_IN
+
+from datetime import datetime, timezone
+
+from server.schemas import BookingCreate
+
+
+def test_booking_dates_are_stored_as_naive_utc():
+    booking = BookingCreate(
+        guest_id="g1",
+        planned_check_in="2026-10-24T18:00:00+03:00",
+        planned_check_out=datetime(2026, 10, 26, 11, 0, tzinfo=timezone.utc),
+    )
+    assert booking.planned_check_in == datetime(2026, 10, 24, 15, 0)
+    assert booking.planned_check_in.tzinfo is None
+    assert booking.planned_check_out == datetime(2026, 10, 26, 11, 0)
+    assert booking.planned_check_out.tzinfo is None

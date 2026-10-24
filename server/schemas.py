@@ -69,6 +69,7 @@ class BookingCreate(BaseModel):
     room_id: str = "room1"
     planned_check_in: Optional[datetime] = None
     planned_check_out: Optional[datetime] = None
+    
     @field_validator("planned_check_in", "planned_check_out")
     @classmethod
     def to_naive_utc(cls, value):
