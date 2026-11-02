@@ -8,7 +8,7 @@ from fastapi import Depends
 from .db import get_session
 from .models import Guest, Booking, ServiceOrder
 from .schemas import (
-    GuestCreate, GuestOut, BookingCreate, BookingOut, ChatIn,
+    GuestCreate, GuestOut, BookingCreate, BookingOut, ChatIn, ApaleoBookingCreate, OfferOut,
 )
 from .booking_service import (
     get_guest, get_booking, check_in, check_out,
@@ -27,6 +27,11 @@ from .mqtt_bus import bus
 from .state import get_store, all_stores
 from .devices import get_registry
 from .timeutil import utcnow
+from datetime import date, datetime, time as dtime
+
+from .apaleo import (
+    ApaleoError, extract_ids, get_client, simplify_offer, split_name, validate_stay,
+)
 
 logging.basicConfig(level=logging.INFO)
 
@@ -219,6 +224,91 @@ async def create_booking(
     await session.refresh(booking)
     return booking
 
+@app.get("/offers", response_model=list[OfferOut])
+async def list_offers(arrival: date, departure: date, adults: int = 2):
+    try:
+        validate_stay(arrival, departure, adults)
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+    client = get_client()
+    try:
+        offers = await client.get_offers(
+            client.property_id, arrival.isoformat(), departure.isoformat(), adults
+        )
+    except ApaleoError:
+        logging.exception("Apaleo offers request failed")
+        raise HTTPException(502, "Booking provider unavailable")
+    return [simplify_offer(o) for o in offers]
+
+
+@app.post("/bookings/apaleo", response_model=BookingOut)
+async def create_apaleo_booking(
+    payload: ApaleoBookingCreate,
+    session: AsyncSession = Depends(get_session),
+):
+    guest = await get_guest(session, payload.guest_id)
+    if not guest:
+        raise HTTPException(404, "guest not found")
+    try:
+        validate_stay(payload.arrival, payload.departure, payload.adults)
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+
+    client = get_client()
+    arrival = payload.arrival.isoformat()
+    departure = payload.departure.isoformat()
+
+    # Look the offer up again ourselves: price and guarantee come from Apaleo.
+    try:
+        offers = await client.get_offers(
+            client.property_id, arrival, departure, payload.adults
+        )
+    except ApaleoError:
+        logging.exception("Apaleo offers request failed")
+        raise HTTPException(502, "Booking provider unavailable")
+    offer = next(
+        (o for o in offers if o["ratePlan"]["id"] == payload.rate_plan_id), None
+    )
+    if offer is None:
+        raise HTTPException(409, "That offer is no longer available")
+    if offer.get("minGuaranteeType") == "Prepayment":
+        raise HTTPException(409, "This rate needs payment, which is not supported yet")
+
+    first_name, last_name = split_name(guest.name)
+    try:
+        result = await client.create_booking(
+            offer, arrival, departure, payload.adults,
+            first_name, last_name, guest.email,
+        )
+    except ApaleoError:
+        logging.exception("Apaleo create booking failed")
+        raise HTTPException(502, "Booking provider rejected the request")
+    try:
+        apaleo_booking_id, apaleo_reservation_id = extract_ids(result)
+    except ApaleoError:
+        logging.error("Apaleo booking CREATED but IDs not understood: %s", result)
+        raise HTTPException(502, "Booking created but could not be recorded; contact staff")
+
+    booking = Booking(
+        guest_id=payload.guest_id,
+        room_id=payload.room_id,
+        status=RESERVED,
+        planned_check_in=datetime.combine(payload.arrival, dtime.min),
+        planned_check_out=datetime.combine(payload.departure, dtime.min),
+        apaleo_booking_id=apaleo_booking_id,
+        apaleo_reservation_id=apaleo_reservation_id,
+    )
+    session.add(booking)
+    try:
+        await session.commit()
+    except Exception:
+        logging.error(
+            "Apaleo booking %s / reservation %s created but local save failed",
+            apaleo_booking_id, apaleo_reservation_id,
+        )
+        raise
+    await session.refresh(booking)
+    return booking
 @app.get("/bookings/active", response_model=BookingOut | None)
 async def active_booking(
     room_id: str = "room1",

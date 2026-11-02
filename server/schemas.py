@@ -1,7 +1,7 @@
 from pydantic import BaseModel, Field, EmailStr, field_validator
 from typing import Literal, Optional
 from uuid import UUID, uuid4
-from datetime import datetime, timezone
+from datetime import datetime, timezone, date
 from .timeutil import utcnow
 
 
@@ -99,3 +99,24 @@ class ChatIn(BaseModel):
     message: str
     booking_id: str | None = None
     room_id: str = "room1"
+
+
+
+class OfferOut(BaseModel):
+    rate_plan_id: str
+    room_type: Optional[str] = None
+    rate_plan: Optional[str] = None
+    total_amount: float
+    currency: str
+    guarantee: Optional[str] = None
+    available_units: Optional[int] = None
+    bookable: bool
+
+
+class ApaleoBookingCreate(BaseModel):
+    guest_id: str
+    room_id: str = "room1"
+    arrival: date
+    departure: date
+    adults: int = 2
+    rate_plan_id: str

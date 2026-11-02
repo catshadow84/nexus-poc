@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import uuid4
 
-from sqlalchemy import String, DateTime, ForeignKey, JSON
+from sqlalchemy import String, DateTime, ForeignKey, JSON, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .db import Base
@@ -24,7 +24,9 @@ class Guest(Base):
 
 class Booking(Base):
     __tablename__ = "bookings"
-
+    __table_args__ = (
+        UniqueConstraint("apaleo_reservation_id", name="uq_bookings_apaleo_reservation_id"),
+    )
     id: Mapped[str] = mapped_column(
         String, primary_key=True, default=lambda: str(uuid4())
     )
