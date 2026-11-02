@@ -84,6 +84,8 @@ class BookingOut(BaseModel):
     guest_id: str
     room_id: str
     status: str
+    apaleo_booking_id: Optional[str] = None
+    apaleo_reservation_id: Optional[str] = None
     planned_check_in: Optional[datetime] = None
     planned_check_out: Optional[datetime] = None
     actual_check_in: Optional[datetime] = None

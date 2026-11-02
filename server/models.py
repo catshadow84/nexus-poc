@@ -31,7 +31,8 @@ class Booking(Base):
     guest_id: Mapped[str] = mapped_column(ForeignKey("guests.id"), nullable=False)
     room_id: Mapped[str] = mapped_column(String, default="room1")
     status: Mapped[str] = mapped_column(String, default="RESERVED")
-
+    apaleo_booking_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    apaleo_reservation_id: Mapped[str | None] = mapped_column(String, nullable=True)    
     planned_check_in: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     planned_check_out: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     actual_check_in: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
