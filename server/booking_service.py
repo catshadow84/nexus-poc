@@ -16,6 +16,8 @@ log = logging.getLogger("booking")
 RESERVED = "RESERVED"
 CHECKED_IN = "CHECKED_IN"
 CHECKED_OUT = "CHECKED_OUT"
+CANCELED = "CANCELED"
+NO_SHOW = "NO_SHOW"
 
 
 # ---------- helpers ----------
@@ -78,6 +80,8 @@ async def get_booking(session: AsyncSession, booking_id: str) -> Booking | None:
 async def check_in(session: AsyncSession, booking: Booking) -> dict:
     if booking.status == CHECKED_IN:
         raise ValueError("Booking already checked in")
+    if booking.status in (CANCELED, NO_SHOW):
+        raise ValueError("Booking was canceled")
     if booking.status == CHECKED_OUT:
         raise ValueError("Cannot re-check-in a completed booking")
     # guard: room must be free

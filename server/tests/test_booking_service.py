@@ -128,3 +128,9 @@ def test_booking_dates_are_stored_as_naive_utc():
     assert booking.planned_check_in.tzinfo is None
     assert booking.planned_check_out == datetime(2026, 10, 26, 11, 0)
     assert booking.planned_check_out.tzinfo is None
+
+async def test_cannot_check_in_a_canceled_booking(session, make_booking):
+       booking = await make_booking()
+       booking.status = "CANCELED"
+       with pytest.raises(ValueError, match="canceled"):
+           await check_in(session, booking)

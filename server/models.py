@@ -59,3 +59,14 @@ class ServiceOrder(Base):
     unit_price_cents: Mapped[int] = mapped_column(default=0)
     status: Mapped[str] = mapped_column(String, default="placed")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+
+class WebhookEvent(Base):
+    __tablename__ = "webhook_events"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    topic: Mapped[str] = mapped_column(String, nullable=False)
+    type: Mapped[str] = mapped_column(String, nullable=False)
+    entity_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    received_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)

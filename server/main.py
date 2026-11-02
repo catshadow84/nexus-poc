@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import Depends
 
 from .db import get_session
-from .models import Guest, Booking, ServiceOrder
+from .models import Guest, Booking, ServiceOrder, WebhookEvent
 from .schemas import (
     GuestCreate, GuestOut, BookingCreate, BookingOut, ChatIn, ApaleoBookingCreate, OfferOut,
 )
@@ -20,13 +20,17 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from .mqtt_bus import bus
 from .state import get_store, all_stores
 from .devices import get_registry
 from .timeutil import utcnow
+import os
+import secrets
+from sqlalchemy.exc import IntegrityError
+from .apaleo_sync import process_event
 from datetime import date, datetime, time as dtime
 
 from .apaleo import (
@@ -223,6 +227,53 @@ async def create_booking(
     await session.commit()
     await session.refresh(booking)
     return booking
+
+@app.post("/webhooks/apaleo/{token}")
+async def apaleo_webhook(
+    token: str,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+):
+    expected = os.getenv("APALEO_WEBHOOK_TOKEN", "")
+    if not expected or not secrets.compare_digest(token.encode(), expected.encode()):
+        raise HTTPException(404, "Not found")  # reveal nothing about the endpoint
+
+    try:
+        payload = await request.json()
+    except ValueError:
+        raise HTTPException(400, "Invalid JSON")
+    if not isinstance(payload, dict):
+        raise HTTPException(400, "Invalid payload")
+
+    topic = str(payload.get("topic", ""))
+    if topic.lower() == "system":  # Apaleo's health check when subscribing
+        return {"ok": True}
+
+    event_id = payload.get("id")
+    if event_id and await session.get(WebhookEvent, event_id):
+        return {"ok": True, "duplicate": True}
+
+    try:
+        outcome = await process_event(session, get_client(), payload)
+    except ApaleoError:
+        logging.exception("Apaleo webhook processing failed")
+        raise HTTPException(503, "Try again later")  # Apaleo will retry
+
+    if event_id:
+        session.add(WebhookEvent(
+            id=event_id,
+            topic=topic,
+            type=str(payload.get("type", "")),
+            entity_id=(payload.get("data") or {}).get("entityId"),
+        ))
+    try:
+        await session.commit()
+    except IntegrityError:  # the same event arrived twice at once
+        await session.rollback()
+        return {"ok": True, "duplicate": True}
+
+    logging.info("Apaleo webhook %s/%s -> %s", topic, payload.get("type"), outcome)
+    return {"ok": True}
 
 @app.get("/offers", response_model=list[OfferOut])
 async def list_offers(arrival: date, departure: date, adults: int = 2):

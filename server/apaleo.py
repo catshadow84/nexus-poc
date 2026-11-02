@@ -11,6 +11,7 @@ load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 TOKEN_URL = "https://identity.apaleo.com/connect/token"
 API_URL = "https://api.apaleo.com"
+WEBHOOK_API = "https://webhook.apaleo.com"
 
 
 class ApaleoError(Exception):
@@ -96,20 +97,21 @@ class ApaleoClient:
         path: str,
         params: dict | None = None,
         json: dict | None = None,
+        base: str = API_URL,
     ) -> dict:
         try:
             async with httpx.AsyncClient(timeout=30) as http:
                 token = await self._get_token(http)
                 resp = await http.request(
                     method,
-                    API_URL + path,
+                    base + path,
                     params=params,
                     json=json,
                     headers={"Authorization": f"Bearer {token}"},
                 )
         except httpx.HTTPError as e:
             raise ApaleoError(f"Network error talking to Apaleo: {e!r}") from e
-        if resp.status_code not in (200, 201, 202):
+        if resp.status_code not in (200, 201, 202, 204):
             raise ApaleoError(
                 f"{method} {path} failed: {resp.status_code} {resp.text} "
                 f"{resp.headers.get('www-authenticate', '')}"
