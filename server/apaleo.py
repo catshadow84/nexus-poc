@@ -1,6 +1,7 @@
 import asyncio
 import os
 import time
+from datetime import date
 from pathlib import Path
 
 import httpx
@@ -41,17 +42,77 @@ class ApaleoClient:
         self._expires_at = time.time() + data["expires_in"]
         return self._token
 
-    async def get(self, path: str, params: dict | None = None) -> dict:
-        async with httpx.AsyncClient(timeout=20) as http:
+    async def _request(
+        self,
+        method: str,
+        path: str,
+        params: dict | None = None,
+        json: dict | None = None,
+    ) -> dict:
+        async with httpx.AsyncClient(timeout=30) as http:
             token = await self._get_token(http)
-            resp = await http.get(
+            resp = await http.request(
+                method,
                 API_URL + path,
                 params=params,
+                json=json,
                 headers={"Authorization": f"Bearer {token}"},
             )
-        if resp.status_code != 200:
-            raise ApaleoError(f"GET {path} failed: {resp.status_code} {resp.text}")
-        return resp.json()
+        if resp.status_code not in (200, 201, 202):
+            raise ApaleoError(f"{method} {path} failed: {resp.status_code} {resp.text}")
+        return resp.json() if resp.content else {}
+
+    async def get(self, path: str, params: dict | None = None) -> dict:
+        return await self._request("GET", path, params=params)
+
+    async def post(self, path: str, json: dict) -> dict:
+        return await self._request("POST", path, json=json)
+
+    async def get_offers(
+        self, property_id: str, arrival: str, departure: str, adults: int
+    ) -> list[dict]:
+        """Available room and rate combinations. Dates are YYYY-MM-DD."""
+        data = await self.get(
+            "/booking/v1/offers",
+            params={
+                "propertyId": property_id,
+                "arrival": arrival,
+                "departure": departure,
+                "adults": adults,
+                "channelCode": "Ibe",
+            },
+        )
+        return data.get("offers", [])
+
+    async def create_booking(
+        self,
+        offer: dict,
+        arrival: str,
+        departure: str,
+        adults: int,
+        first_name: str,
+        last_name: str,
+        email: str,
+    ) -> dict:
+        """Create one reservation from an offer. Returns Apaleo's raw response."""
+        nights = (date.fromisoformat(departure) - date.fromisoformat(arrival)).days
+        time_slices = [{"ratePlanId": offer["ratePlan"]["id"]} for _ in range(nights)]        
+        guest = {"firstName": first_name, "lastName": last_name, "email": email}
+        body = {
+            "booker": guest,
+            "reservations": [
+                {
+                    "arrival": arrival,
+                    "departure": departure,
+                    "adults": adults,
+                    "channelCode": "Ibe",
+                    "primaryGuest": guest,
+                    "guaranteeType": offer["minGuaranteeType"],
+                    "timeSlices": time_slices,
+                }
+            ],
+        }
+        return await self.post("/booking/v1/bookings", json=body)
 
 
 async def _main() -> None:
