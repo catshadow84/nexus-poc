@@ -5,29 +5,33 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .apaleo import ApaleoClient
-from .booking_service import CANCELED, NO_SHOW, RESERVED
+from .booking_service import CANCELED, NO_SHOW, RESERVED, CHECKED_OUT, _reset_room
 from .models import Booking
 
 log = logging.getLogger("apaleo_sync")
 
 
 def reconcile(booking, reservation: dict) -> list[str]:
-    """Update our booking from Apaleo's version of the reservation.
-
-    Returns a description of each change made. Unknown shapes are ignored.
-    """
     changes: list[str] = []
 
     status = reservation.get("status")
-    if status in ("Canceled", "NoShow"):
+    
+    # 1. Handle Checked Out (Energy Scene)
+    if status == "CheckedOut":
+        if booking.status != CHECKED_OUT:
+            booking.status = CHECKED_OUT
+            changes.append("status -> CHECKED_OUT")
+            
+    # 2. Handle Canceled / NoShow
+    elif status in ("Canceled", "NoShow"):
         new_status = CANCELED if status == "Canceled" else NO_SHOW
         if booking.status == RESERVED:
             booking.status = new_status
             changes.append(f"status -> {new_status}")
         elif booking.status != new_status:
-            # The guest is already in the room or has left: a human must decide.
             log.warning("Apaleo says %s but local booking is %s", status, booking.status)
 
+    # 3. Handle Date changes
     if booking.status == RESERVED:
         for field, key in (("planned_check_in", "arrival"), ("planned_check_out", "departure")):
             value = reservation.get(key)
@@ -46,7 +50,6 @@ def reconcile(booking, reservation: dict) -> list[str]:
 
 
 async def process_event(session: AsyncSession, client: ApaleoClient, payload: dict) -> str:
-    """Handle one webhook event. Returns a short result for the log."""
     if str(payload.get("topic", "")).lower() != "reservation":
         return "ignored topic"
 
@@ -61,12 +64,19 @@ async def process_event(session: AsyncSession, client: ApaleoClient, payload: di
     if booking is None:
         return f"{entity_id} is not one of ours"
 
-    # Never trust the webhook body: ask Apaleo for the current truth.
     reservation = await client.get(f"/booking/v1/reservations/{entity_id}")
     log.info(
         "reservation %s: status=%s arrival=%s departure=%s",
         entity_id, reservation.get("status"),
         reservation.get("arrival"), reservation.get("departure"),
     )
+    
     changes = reconcile(booking, reservation)
+    
+    # If the guest checked out in Apaleo, trigger the energy saving scene
+    if "status -> CHECKED_OUT" in changes:
+        log.info("Triggering Energy Scene for room %s", booking.room_id)
+        await _reset_room(booking.room_id)
+        changes.append("room reset triggered")
+
     return f"{entity_id}: " + ("; ".join(changes) if changes else "no changes")
