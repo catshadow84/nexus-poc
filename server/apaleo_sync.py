@@ -5,8 +5,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .apaleo import ApaleoClient
-from .booking_service import CANCELED, NO_SHOW, RESERVED, CHECKED_OUT, _reset_room
+from .booking_service import CANCELED, NO_SHOW, RESERVED, CHECKED_IN, CHECKED_OUT, _reset_room
 from .models import Booking
+from .timeutil import utcnow
 
 log = logging.getLogger("apaleo_sync")
 
@@ -16,11 +17,15 @@ def reconcile(booking, reservation: dict) -> list[str]:
 
     status = reservation.get("status")
     
-    # 1. Handle Checked Out (Energy Scene)
+    # 1. Handle Checked Out
     if status == "CheckedOut":
         if booking.status != CHECKED_OUT:
+            was_in_room = booking.status == CHECKED_IN
             booking.status = CHECKED_OUT
+            booking.actual_check_out = booking.actual_check_out or utcnow()
             changes.append("status -> CHECKED_OUT")
+            if was_in_room:
+                changes.append("room needs reset")
             
     # 2. Handle Canceled / NoShow
     elif status in ("Canceled", "NoShow"):
@@ -73,10 +78,20 @@ async def process_event(session: AsyncSession, client: ApaleoClient, payload: di
     
     changes = reconcile(booking, reservation)
     
-    # If the guest checked out in Apaleo, trigger the energy saving scene
-    if "status -> CHECKED_OUT" in changes:
-        log.info("Triggering Energy Scene for room %s", booking.room_id)
-        await _reset_room(booking.room_id)
-        changes.append("room reset triggered")
+    # The guest left: put the room into its energy-saving state, but only if
+    # nobody else has checked in to that room in the meantime.
+    if "room needs reset" in changes:
+        other = await session.execute(
+            select(Booking)
+            .where(Booking.room_id == booking.room_id)
+            .where(Booking.status == CHECKED_IN)
+            .where(Booking.id != booking.id)
+        )
+        if other.scalars().first():
+            log.warning("Not resetting %s: another guest is checked in", booking.room_id)
+        else:
+            log.info("Triggering energy scene for room %s", booking.room_id)
+            await _reset_room(booking.room_id)
+            changes.append("room reset triggered")
 
     return f"{entity_id}: " + ("; ".join(changes) if changes else "no changes")

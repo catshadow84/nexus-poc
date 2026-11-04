@@ -2,7 +2,7 @@ from datetime import datetime
 from types import SimpleNamespace
 
 from server.apaleo_sync import reconcile
-from server.booking_service import CANCELED, CHECKED_IN, NO_SHOW, RESERVED
+from server.booking_service import CANCELED, CHECKED_IN, NO_SHOW, RESERVED, CHECKED_OUT
 
 
 def make(status=RESERVED):
@@ -10,6 +10,7 @@ def make(status=RESERVED):
         status=status,
         planned_check_in=datetime(2026, 12, 10),
         planned_check_out=datetime(2026, 12, 12),
+        actual_check_out = None,
     )
 
 
@@ -58,3 +59,23 @@ def test_same_dates_means_no_changes():
 def test_garbage_is_ignored():
     booking = make()
     assert reconcile(booking, {"arrival": 5, "departure": "x", "status": None}) == []
+
+def test_checkout_in_apaleo_closes_a_booking_that_was_in_the_room():
+    booking = make(CHECKED_IN)
+    changes = reconcile(booking, {"status": "CheckedOut"})
+    assert booking.status == CHECKED_OUT
+    assert booking.actual_check_out is not None
+    assert "room needs reset" in changes
+
+
+def test_checkout_of_a_booking_never_checked_in_needs_no_room_reset():
+    booking = make(RESERVED)
+    changes = reconcile(booking, {"status": "CheckedOut"})
+    assert booking.status == CHECKED_OUT
+    assert "room needs reset" not in changes
+
+
+def test_checkout_seen_twice_changes_nothing():
+    booking = make(CHECKED_OUT)
+    booking.actual_check_out = datetime(2026, 12, 12)
+    assert reconcile(booking, {"status": "CheckedOut"}) == [] 
