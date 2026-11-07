@@ -8,7 +8,7 @@ from server import booking_service, devices, state
 from server.booking_service import RESERVED
 from server.db import Base
 from server.models import Booking, Guest
-
+import httpx
 
 @pytest_asyncio.fixture
 async def session(tmp_path):
@@ -57,3 +57,18 @@ def make_booking(session):
         return booking
 
     return _make
+
+@pytest_asyncio.fixture
+async def client(session):
+    """An HTTP client for the real app, wired to the temporary test database."""
+    from server.db import get_session
+    from server.main import app
+
+    async def override():
+        yield session
+
+    app.dependency_overrides[get_session] = override
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as c:
+        yield c
+    app.dependency_overrides.clear()

@@ -14,10 +14,13 @@ class Broadcaster:
 
     async def connect(self, room_id: str, ws: WebSocket):
         await ws.accept()
+        await self.register(room_id, ws)
+
+    async def register(self, room_id: str, ws: WebSocket):
         async with self._lock:
             self._clients.setdefault(room_id, set()).add(ws)
         log.info("ws connected room=%s total=%d", room_id, len(self._clients[room_id]))
-
+        
     async def disconnect(self, room_id: str, ws: WebSocket):
         async with self._lock:
             self._clients.get(room_id, set()).discard(ws)

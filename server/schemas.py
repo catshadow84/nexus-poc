@@ -94,6 +94,9 @@ class BookingOut(BaseModel):
 
     model_config = {"from_attributes": True}
 
+class BookingCreatedOut(BookingOut):
+    guest_token: str
+
 class ChatIn(BaseModel):
     session_id: str
     message: str

@@ -5,10 +5,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import Depends
 
-from .db import get_session
+from .db import get_session, SessionLocal
 from .models import Guest, Booking, ServiceOrder, WebhookEvent
 from .schemas import (
-    GuestCreate, GuestOut, BookingCreate, BookingOut, ChatIn, ApaleoBookingCreate, OfferOut,
+    GuestCreate, GuestOut, BookingCreate, BookingOut, ChatIn, ApaleoBookingCreate, OfferOut, BookingCreatedOut,
 )
 from .booking_service import (
     get_guest, get_booking, check_in, check_out,
@@ -37,11 +37,18 @@ from .apaleo import (
     ApaleoError, extract_ids, get_client, simplify_offer, split_name, validate_stay,
 )
 
+from .auth import (
+    Principal, auth_disabled, can_access_room, get_principal, issue_guest_token,
+    optional_principal, owned_booking, principal_from_token, require_staff, room_access,
+)
+
 logging.basicConfig(level=logging.INFO)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    if auth_disabled():
+        logging.warning("AUTH_DISABLED=1: every endpoint is open. Development only!")
     await bus.start()
 
     async def handle_state(topic: str, payload: dict):
@@ -81,11 +88,11 @@ def health():
 
 
 @app.get("/rooms/{room_id}/state")
-def room_state(room_id: str):
+def room_state(room_id: str = Depends(room_access)):
     return get_store(room_id).snapshot()
 
 @app.post("/rooms/{room_id}/device/{device}/command")
-async def command(room_id: str, device: str, value: dict):
+async def command(device: str, value: dict, room_id: str = Depends(room_access)):
     registry = get_registry(room_id)
     store = get_store(room_id)
     try:
@@ -112,7 +119,21 @@ async def command(room_id: str, device: str, value: dict):
 
 @app.websocket("/ws")
 async def ws_endpoint(ws: WebSocket, room_id: str = "room1"):
-    await broadcaster.connect(room_id, ws)
+    await ws.accept()
+    if not auth_disabled():
+        # The first message must be {"type": "auth", "token": "..."}.
+        try:
+            message = await asyncio.wait_for(ws.receive_json(), timeout=5)
+            async with SessionLocal() as session:
+                principal = await principal_from_token(session, str(message.get("token", "")))
+                allowed = await can_access_room(session, principal, room_id)
+        except (WebSocketDisconnect, asyncio.TimeoutError, HTTPException, ValueError, AttributeError):
+            await ws.close(code=1008)
+            return
+        if not allowed:
+            await ws.close(code=1008)
+            return
+    await broadcaster.register(room_id, ws)
     try:
         await ws.send_json({
             "type": "state",
@@ -133,6 +154,7 @@ async def ws_endpoint(ws: WebSocket, room_id: str = "room1"):
 async def create_guest(
     payload: GuestCreate,
     session: AsyncSession = Depends(get_session),
+    principal: Principal | None = Depends(optional_principal),
 ):
     # if a guest with this email exists, update their preferences and return
     existing = await session.execute(
@@ -140,12 +162,13 @@ async def create_guest(
     )
     guest = existing.scalar_one_or_none()
     if guest:
-        guest.name = payload.name
-        # only overwrite preferences if explicitly provided (non-empty)
-        if payload.preferences:
-            guest.preferences = payload.preferences
-        await session.commit()
-        await session.refresh(guest)
+        # Only staff may change an existing guest's data.
+        if principal is not None and principal.is_staff:
+            guest.name = payload.name
+            if payload.preferences:
+                guest.preferences = payload.preferences
+            await session.commit()
+            await session.refresh(guest)
         return guest
 
     guest = Guest(
@@ -161,6 +184,7 @@ async def create_guest(
 @app.get("/guests/lookup")
 async def lookup_guest(
     email: str,
+    _: Principal = Depends(require_staff),
     session: AsyncSession = Depends(get_session),
 ):
     result = await session.execute(
@@ -196,8 +220,11 @@ async def lookup_guest(
 @app.get("/guests/{guest_id}", response_model=GuestOut)
 async def read_guest(
     guest_id: str,
+    principal: Principal = Depends(get_principal),
     session: AsyncSession = Depends(get_session),
 ):
+    if not (principal.is_staff or principal.guest_id == guest_id):
+        raise HTTPException(404, "guest not found")
     g = await get_guest(session, guest_id)
     if not g:
         raise HTTPException(404, "guest not found")
@@ -210,6 +237,7 @@ async def read_guest(
 @app.post("/bookings", response_model=BookingOut)
 async def create_booking(
     payload: BookingCreate,
+    _: Principal = Depends(require_staff),
     session: AsyncSession = Depends(get_session),
 ):
     g = await get_guest(session, payload.guest_id)
@@ -292,7 +320,7 @@ async def list_offers(arrival: date, departure: date, adults: int = 2):
     return [simplify_offer(o) for o in offers]
 
 
-@app.post("/bookings/apaleo", response_model=BookingOut)
+@app.post("/bookings/apaleo", response_model=BookingCreatedOut)
 async def create_apaleo_booking(
     payload: ApaleoBookingCreate,
     session: AsyncSession = Depends(get_session),
@@ -351,6 +379,7 @@ async def create_apaleo_booking(
     )
     session.add(booking)
     try:
+        guest_token = await issue_guest_token(session, booking)
         await session.commit()
     except Exception:
         logging.error(
@@ -359,11 +388,14 @@ async def create_apaleo_booking(
         )
         raise
     await session.refresh(booking)
-    return booking
+    return BookingCreatedOut(
+        **BookingOut.model_validate(booking).model_dump(), guest_token=guest_token
+    )
 @app.get("/bookings/active", response_model=BookingOut | None)
 async def active_booking(
     room_id: str = "room1",
     session: AsyncSession = Depends(get_session),
+    _: Principal = Depends(require_staff),
 ):
     result = await session.execute(
         select(Booking)
@@ -374,12 +406,10 @@ async def active_booking(
 
 @app.get("/bookings/{booking_id}/summary")
 async def booking_summary(
-    booking_id: str,
+    b: Booking = Depends(owned_booking),
     session: AsyncSession = Depends(get_session),
 ):
-    b = await get_booking(session, booking_id)
-    if not b:
-        raise HTTPException(404, "booking not found")
+    booking_id = b.id
 
     guest = await get_guest(session, b.guest_id)
 
@@ -434,18 +464,13 @@ async def booking_summary(
     }
 
 @app.get("/bookings/{booking_id}", response_model=BookingOut)
-async def read_booking(
-    booking_id: str,
-    session: AsyncSession = Depends(get_session),
-):
-    b = await get_booking(session, booking_id)
-    if not b:
-        raise HTTPException(404, "booking not found")
+async def read_booking(b: Booking = Depends(owned_booking)):
     return b
 
 
 @app.get("/bookings", response_model=list[BookingOut])
 async def list_bookings(
+    _: Principal = Depends(require_staff),
     session: AsyncSession = Depends(get_session),
 ):
     result = await session.execute(select(Booking).order_by(Booking.created_at.desc()))
@@ -456,12 +481,9 @@ async def list_bookings(
 
 @app.post("/bookings/{booking_id}/checkin")
 async def do_check_in(
-    booking_id: str,
+    b: Booking = Depends(owned_booking),
     session: AsyncSession = Depends(get_session),
 ):
-    b = await get_booking(session, booking_id)
-    if not b:
-        raise HTTPException(404, "booking not found")
     try:
         result = await check_in(session, b)
     except ValueError as e:
@@ -471,17 +493,26 @@ async def do_check_in(
 
 @app.post("/bookings/{booking_id}/checkout")
 async def do_check_out(
-    booking_id: str,
+    b: Booking = Depends(owned_booking),
     session: AsyncSession = Depends(get_session),
 ):
-    b = await get_booking(session, booking_id)
-    if not b:
-        raise HTTPException(404, "booking not found")
     try:
         result = await check_out(session, b)
     except ValueError as e:
         raise HTTPException(400, str(e))
     return {"ok": True, "booking_id": b.id, "status": b.status, **result}
+
+
+@app.post("/bookings/{booking_id}/token")
+async def reissue_token(
+    b: Booking = Depends(owned_booking),
+    _: Principal = Depends(require_staff),
+    session: AsyncSession = Depends(get_session),
+):
+    """Staff only: issue a fresh guest token. Older tokens stop working."""
+    token = await issue_guest_token(session, b)
+    await session.commit()
+    return {"booking_id": b.id, "guest_token": token}
 
 @app.get("/scenes")
 def get_scenes():
@@ -489,7 +520,7 @@ def get_scenes():
 
 
 @app.post("/rooms/{room_id}/scenes/{name}")
-async def run_scene(room_id: str, name: str):
+async def run_scene(name: str, room_id: str = Depends(room_access)):
     try:
         applied = await apply_scene(room_id, name)
     except KeyError:
@@ -497,19 +528,28 @@ async def run_scene(room_id: str, name: str):
     return {"ok": True, "scene": name, "applied_devices": applied}
 
 @app.get("/rooms")
-def list_rooms():
+def list_rooms(_: Principal = Depends(require_staff)):
     return {"rooms": list(all_stores().keys())}
+
 
 @app.post("/nora/chat")
 async def nora_chat(
     payload: ChatIn,
+    principal: Principal = Depends(get_principal),
     session: AsyncSession = Depends(get_session),
 ):
+    booking_id = payload.booking_id
+    if not principal.is_staff:
+        if booking_id not in (None, principal.booking_id):
+            raise HTTPException(403, "Not your booking")
+        booking_id = principal.booking_id
+        booking = await get_booking(session, booking_id)
+        if not booking or booking.status != CHECKED_IN:
+            raise HTTPException(403, "Check in first")
     return await handle_message(
         session,
         payload.session_id,
         payload.message,
-        booking_id=payload.booking_id,
+        booking_id=booking_id,
         room_id=payload.room_id,
     )
-

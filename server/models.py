@@ -70,3 +70,17 @@ class WebhookEvent(Base):
     type: Mapped[str] = mapped_column(String, nullable=False)
     entity_id: Mapped[str | None] = mapped_column(String, nullable=True)
     received_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+
+class AccessToken(Base):
+    __tablename__ = "access_tokens"
+
+    id: Mapped[str] = mapped_column(
+        String, primary_key=True, default=lambda: str(uuid4())
+    )
+    token_hash: Mapped[str] = mapped_column(String, unique=True, nullable=False)
+    booking_id: Mapped[str] = mapped_column(ForeignKey("bookings.id"), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
