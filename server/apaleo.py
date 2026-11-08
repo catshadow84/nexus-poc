@@ -124,6 +124,13 @@ class ApaleoClient:
     async def post(self, path: str, json: dict) -> dict:
         return await self._request("POST", path, json=json)
 
+    async def put(self, path: str, params: dict | None = None, json: dict | None = None) -> dict:
+        return await self._request("PUT", path, params=params, json=json)
+
+    async def cancel_reservation(self, reservation_id: str) -> None:
+        """Cancel one reservation in Apaleo. The response has no body."""
+        await self.put(f"/booking/v1/reservation-actions/{reservation_id}/cancel")
+
     async def get_offers(
         self, property_id: str, arrival: str, departure: str, adults: int
     ) -> list[dict]:

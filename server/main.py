@@ -8,11 +8,11 @@ from fastapi import Depends
 from .db import get_session, SessionLocal
 from .models import Guest, Booking, ServiceOrder, WebhookEvent
 from .schemas import (
-    GuestCreate, GuestOut, BookingCreate, BookingOut, ChatIn, ApaleoBookingCreate, OfferOut, BookingCreatedOut,
+    GuestCreate, GuestOut, BookingCreate, BookingOut, ChatIn, ApaleoBookingCreate, OfferOut, BookingCreatedOut, OrderIn,
 )
 from .booking_service import (
     get_guest, get_booking, check_in, check_out,
-    RESERVED, CHECKED_IN, CHECKED_OUT,
+    RESERVED, CHECKED_IN, CHECKED_OUT, CANCELED,
 )
 from fastapi import WebSocket, WebSocketDisconnect
 from .broadcast import broadcaster
@@ -41,6 +41,8 @@ from .auth import (
     Principal, auth_disabled, can_access_room, get_principal, issue_guest_token,
     optional_principal, owned_booking, principal_from_token, require_staff, room_access,
 )
+
+from .nora_tools import MENU, tool_create_service_order
 
 logging.basicConfig(level=logging.INFO)
 
@@ -513,6 +515,44 @@ async def reissue_token(
     token = await issue_guest_token(session, b)
     await session.commit()
     return {"booking_id": b.id, "guest_token": token}
+
+@app.post("/bookings/{booking_id}/cancel")
+async def cancel_booking(
+    b: Booking = Depends(owned_booking),
+    session: AsyncSession = Depends(get_session),
+):
+    if b.status != RESERVED:
+        raise HTTPException(400, "Only a reservation that has not been checked in can be canceled")
+    if b.apaleo_reservation_id:
+        try:
+            await get_client().cancel_reservation(b.apaleo_reservation_id)
+        except ApaleoError:
+            logging.exception("Apaleo cancel failed")
+            raise HTTPException(502, "The booking provider could not cancel the reservation")
+    b.status = CANCELED
+    await session.commit()
+    return {"ok": True, "booking_id": b.id, "status": b.status}
+
+
+@app.get("/menu")
+def menu(_: Principal = Depends(get_principal)):
+    return {"items": [{"item": k, "price_cents": v} for k, v in MENU.items()]}
+
+
+@app.post("/bookings/{booking_id}/orders")
+async def place_order(
+    payload: OrderIn,
+    b: Booking = Depends(owned_booking),
+    session: AsyncSession = Depends(get_session),
+):
+    if b.status != CHECKED_IN:
+        raise HTTPException(400, "Services can only be ordered during the stay")
+    item = payload.item.strip().lower()
+    if item not in MENU:
+        raise HTTPException(422, f"Unknown item. Choose from: {', '.join(MENU)}")
+    return await tool_create_service_order(
+        session, item=item, quantity=payload.quantity, booking_id=b.id
+    )
 
 @app.get("/scenes")
 def get_scenes():

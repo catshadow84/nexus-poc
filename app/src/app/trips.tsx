@@ -67,6 +67,30 @@ export default function TripsScreen() {
     }
   }
 
+  function confirmCancel() {
+    Alert.alert(
+      'Cancel this reservation?',
+      'This cannot be undone. A cancellation fee may apply on some rates.',
+      [
+        { text: 'Keep it', style: 'cancel' },
+        { text: 'Cancel reservation', style: 'destructive', onPress: doCancel },
+      ],
+    );
+  }
+
+  async function doCancel() {
+    if (!booking) return;
+    setBusy(true);
+    try {
+      await api(`/bookings/${booking.id}/cancel`, { method: 'POST' });
+      await load();
+    } catch (e: any) {
+      Alert.alert('Could not cancel', e.message ?? 'Something went wrong');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function signOut() {
     await clearToken();
     router.replace('/search');
@@ -96,6 +120,11 @@ export default function TripsScreen() {
               <Text style={styles.btnText}>{busy ? 'Checking in…' : 'Check in'}</Text>
             </Pressable>
           )}
+  {booking.status === 'RESERVED' && (
+    <Pressable style={styles.secondary} onPress={confirmCancel} disabled={busy}>
+      <Text style={styles.secondaryText}>Cancel reservation</Text>
+    </Pressable>
+  )}          
           {booking.status === 'CHECKED_IN' && (
             <Pressable style={styles.btn} onPress={() => router.replace('/')}>
               <Text style={styles.btnText}>Open my room</Text>

@@ -123,3 +123,7 @@ class ApaleoBookingCreate(BaseModel):
     departure: date
     adults: int = 2
     rate_plan_id: str
+
+class OrderIn(BaseModel):
+    item: str
+    quantity: int = Field(1, ge=1, le=10)

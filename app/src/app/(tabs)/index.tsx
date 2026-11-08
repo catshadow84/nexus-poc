@@ -244,6 +244,25 @@ export default function HomeScreen() {
   </Pressable>
 </View>
 
+      {isGuest && (
+        <View style={styles.actionRow}>
+          <Pressable
+            style={[styles.actionBtn, styles.actionBtnLeft]}
+            onPress={() => router.push('/services')}
+          >
+            <Text style={styles.actionLabel}>Room service</Text>
+            <Text style={styles.actionIcon}>☕︎</Text>
+          </Pressable>
+          <Pressable
+            style={styles.actionBtn}
+            onPress={() => router.push(bookingId ? `/summary?booking_id=${bookingId}` : '/trips')}
+          >
+            <Text style={styles.actionLabel}>My bill</Text>
+            <Text style={styles.actionIcon}>≡</Text>
+          </Pressable>
+        </View>
+      )}
+
       {/* ---- LIGHT ---- */}
       <View style={styles.card}>
         <Text style={styles.cardTitle}>Light</Text>
