@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react';
 import { Text, View, Pressable, ScrollView, StyleSheet, Alert } from 'react-native';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { api } from '@/lib/api';
 import { getTrip } from '@/lib/session';
 
 type MenuItem = { item: string; price_cents: number };
 
 export default function ServicesScreen() {
+    const params = useLocalSearchParams<{ booking_id?: string }>();
   const [items, setItems] = useState<MenuItem[]>([]);
   const [qty, setQty] = useState<Record<string, number>>({});
   const [busy, setBusy] = useState(false);
@@ -23,15 +24,15 @@ export default function ServicesScreen() {
     setQty((s) => ({ ...s, [item]: Math.min(10, Math.max(1, (s[item] ?? 1) + delta)) }));
 
   async function order(item: string) {
-    const trip = await getTrip();
-    if (!trip) {
+  const bookingId = params.booking_id ?? (await getTrip())?.bookingId;
+  if (!bookingId) {
       Alert.alert('Guests only', 'Sign in as a guest with an active stay to order.');
       return;
     }
     setBusy(true);
     setMessage(null);
     try {
-      await api(`/bookings/${trip.bookingId}/orders`, {
+      await api(`/bookings/${bookingId}/orders`, {
         method: 'POST',
         body: { item, quantity: q(item) },
       });

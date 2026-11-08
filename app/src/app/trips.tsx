@@ -144,6 +144,9 @@ export default function TripsScreen() {
       <Pressable style={styles.secondary} onPress={() => router.push('/search')}>
         <Text style={styles.secondaryText}>Book another stay</Text>
       </Pressable>
+      <Pressable style={styles.secondary} onPress={() => router.push('/profile')}>
+        <Text style={styles.secondaryText}>Profile</Text>
+      </Pressable>      
       <Pressable onPress={signOut} style={{ marginTop: 24 }}>
         <Text style={styles.link}>Sign out</Text>
       </Pressable>

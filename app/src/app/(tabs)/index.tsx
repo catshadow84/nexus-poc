@@ -262,6 +262,11 @@ export default function HomeScreen() {
           </Pressable>
         </View>
       )}
+      {!isGuest && (
+        <Pressable style={styles.checkoutBtn} onPress={() => router.push('/staff')}>
+          <Text style={styles.checkoutText}>Staff desk</Text>
+        </Pressable>
+      )}      
 
       {/* ---- LIGHT ---- */}
       <View style={styles.card}>

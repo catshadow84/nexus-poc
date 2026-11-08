@@ -1,14 +1,14 @@
 import math
 from .nora import handle_message
 from .scenes import apply_scene, list_scenes
-from sqlalchemy import select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import Depends
 
 from .db import get_session, SessionLocal
 from .models import Guest, Booking, ServiceOrder, WebhookEvent
 from .schemas import (
-    GuestCreate, GuestOut, BookingCreate, BookingOut, ChatIn, ApaleoBookingCreate, OfferOut, BookingCreatedOut, OrderIn,
+    GuestCreate, GuestOut, BookingCreate, BookingOut, ChatIn, ApaleoBookingCreate, OfferOut, BookingCreatedOut, OrderIn, GuestUpdate,
 )
 from .booking_service import (
     get_guest, get_booking, check_in, check_out,
@@ -31,7 +31,7 @@ import os
 import secrets
 from sqlalchemy.exc import IntegrityError
 from .apaleo_sync import process_event
-from datetime import date, datetime, time as dtime
+from datetime import date, datetime, time as dtime, timedelta
 
 from .apaleo import (
     ApaleoError, extract_ids, get_client, simplify_offer, split_name, validate_stay,
@@ -553,6 +553,91 @@ async def place_order(
     return await tool_create_service_order(
         session, item=item, quantity=payload.quantity, booking_id=b.id
     )
+
+def _booking_row(b: Booking, g: Guest) -> dict:
+    return {
+        "booking_id": b.id,
+        "status": b.status,
+        "room_id": b.room_id,
+        "guest_name": g.name,
+        "guest_email": g.email,
+        "arrival": b.planned_check_in.date().isoformat() if b.planned_check_in else None,
+        "departure": b.planned_check_out.date().isoformat() if b.planned_check_out else None,
+        "reservation": b.apaleo_reservation_id,
+    }
+
+
+@app.get("/staff/overview")
+async def staff_overview(
+    day: date | None = None,
+    _: Principal = Depends(require_staff),
+    session: AsyncSession = Depends(get_session),
+):
+    day = day or utcnow().date()
+    start = datetime.combine(day, dtime.min)
+    end = start + timedelta(days=1)
+    base = select(Booking, Guest).join(Guest, Guest.id == Booking.guest_id)
+
+    arrivals = await session.execute(
+        base.where(Booking.status == RESERVED)
+        .where(Booking.planned_check_in >= start, Booking.planned_check_in < end)
+    )
+    in_house = await session.execute(base.where(Booking.status == CHECKED_IN))
+    departures = await session.execute(
+        base.where(Booking.status == CHECKED_IN)
+        .where(Booking.planned_check_out >= start, Booking.planned_check_out < end)
+    )
+    return {
+        "day": day.isoformat(),
+        "arrivals": [_booking_row(b, g) for b, g in arrivals.all()],
+        "in_house": [_booking_row(b, g) for b, g in in_house.all()],
+        "departures": [_booking_row(b, g) for b, g in departures.all()],
+    }
+
+
+@app.get("/staff/search")
+async def staff_search(
+    q: str,
+    _: Principal = Depends(require_staff),
+    session: AsyncSession = Depends(get_session),
+):
+    term = q.strip().replace("%", "").replace("_", "")
+    if len(term) < 2:
+        raise HTTPException(422, "Type at least 2 characters")
+    like = f"%{term.lower()}%"
+    result = await session.execute(
+        select(Booking, Guest)
+        .join(Guest, Guest.id == Booking.guest_id)
+        .where(
+            or_(
+                func.lower(Guest.name).like(like),
+                func.lower(Guest.email).like(like),
+                func.lower(Booking.apaleo_reservation_id).like(like),
+                Booking.id.like(f"{term}%"),
+            )
+        )
+        .order_by(Booking.created_at.desc())
+        .limit(50)
+    )
+    return [_booking_row(b, g) for b, g in result.all()]
+
+
+@app.patch("/guests/{guest_id}", response_model=GuestOut)
+async def update_guest(
+    guest_id: str,
+    payload: GuestUpdate,
+    principal: Principal = Depends(get_principal),
+    session: AsyncSession = Depends(get_session),
+):
+    if not (principal.is_staff or principal.guest_id == guest_id):
+        raise HTTPException(404, "guest not found")
+    g = await get_guest(session, guest_id)
+    if not g:
+        raise HTTPException(404, "guest not found")
+    g.name = payload.name.strip()
+    await session.commit()
+    await session.refresh(g)
+    return g
 
 @app.get("/scenes")
 def get_scenes():

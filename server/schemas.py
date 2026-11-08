@@ -127,3 +127,6 @@ class ApaleoBookingCreate(BaseModel):
 class OrderIn(BaseModel):
     item: str
     quantity: int = Field(1, ge=1, le=10)
+
+class GuestUpdate(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
