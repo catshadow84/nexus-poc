@@ -3,7 +3,7 @@ import {
   Text, View, StyleSheet, ScrollView, Pressable, ActivityIndicator,
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
-import { API_URL } from '@/config';
+import { api } from '@/lib/api';
 
 
 type Order = {
@@ -48,9 +48,8 @@ export default function SummaryScreen() {
 
   useEffect(() => {
     if (!params.booking_id) return;
-    fetch(`${API_URL}/bookings/${params.booking_id}/summary`)
-      .then((r) => r.json())
-      .then(setSummary)
+   api<Summary>(`/bookings/${params.booking_id}/summary`)
+     .then(setSummary)
       .catch((e) => setError(String(e)));
   }, [params.booking_id]);
 

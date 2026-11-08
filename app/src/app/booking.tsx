@@ -3,7 +3,7 @@ import { useLocalSearchParams } from 'expo-router';
 import {
   Text, View, TextInput, Pressable, StyleSheet, ScrollView, Alert,
 } from 'react-native';
-import { API_URL } from '@/config';
+import { api } from '@/lib/api';
 
 
 
@@ -44,8 +44,7 @@ export default function BookingScreen() {
     return;
   }
   const t = setTimeout(() => {
-    fetch(`${API_URL}/guests/lookup?email=${encodeURIComponent(email)}`)
-      .then((r) => r.json())
+    api(`/guests/lookup?email=${encodeURIComponent(email)}`)
       .then((data) => {
         if (data.found) {
           setReturning({
@@ -74,51 +73,35 @@ export default function BookingScreen() {
      setBusy(true);
      setResult(null);
     try {
-      // 1. create guest
-      const guestRes = await fetch(`${API_URL}/guests`, {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({
-    name,
-    email: cleanEmail,
-    preferences: returning ? {} : buildPreferences(name),
-  }),
-});
-      if (!guestRes.ok) throw new Error(`guest: ${await guestRes.text()}`);
-      const guest = await guestRes.json();
+   // 1. create guest
+   const guest = await api('/guests', {
+     method: 'POST',
+     body: {
+       name,
+       email: cleanEmail,
+       preferences: returning ? {} : buildPreferences(name),
+     },
+   });
 
-      // 2. create booking
-      const bookingRes = await fetch(`${API_URL}/bookings`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ guest_id: guest.id, room_id: roomId }),
-      });
-      if (!bookingRes.ok) throw new Error(`booking: ${await bookingRes.text()}`);
-      const booking = await bookingRes.json();
-      
-      // pre-step: if a booking is already checked in, check it out so the room is free
-try {
-  const activeRes = await fetch(`${API_URL}/bookings/active?room_id=${roomId}`);
-  if (activeRes.ok) {
-    const active = await activeRes.json();
-    if (active && active.id) {
-      await fetch(`${API_URL}/bookings/${active.id}/checkout`, {
-        method: 'POST',
-      });
-    }
-  }
-} catch {
-  // ignore — if it fails, the checkin below will report the real error
-}
-      // 3. check in
-      const ciRes = await fetch(
-        `${API_URL}/bookings/${booking.id}/checkin`,
-        { method: 'POST' }
-      );
-      if (!ciRes.ok) throw new Error(`checkin: ${await ciRes.text()}`);
-      const ci = await ciRes.json();
+   // 2. create booking
+   const booking = await api('/bookings', {
+     method: 'POST',
+     body: { guest_id: guest.id, room_id: roomId },
+   });
 
-      setResult(`Checked in. Applied: ${ci.applied_devices.join(', ')}`);
+   // if a booking is already checked in, check it out so the room is free
+   try {
+     const active = await api(`/bookings/active?room_id=${roomId}`);
+     if (active && active.id) {
+       await api(`/bookings/${active.id}/checkout`, { method: 'POST' });
+     }
+   } catch {
+     // the check-in below will report the real error
+   }
+
+   // 3. check in
+   const ci = await api(`/bookings/${booking.id}/checkin`, { method: 'POST' });
+   setResult(`Checked in. Applied: ${ci.applied_devices.join(', ')}`);
     } catch (e: any) {
       Alert.alert('Failed', e.message ?? String(e));
     } finally {

@@ -4,22 +4,17 @@ import {
 } from 'react-native';
 import Slider from '@react-native-community/slider';
 import { router } from 'expo-router';
-import { API_URL, WS_URL } from '@/config';
+import { WS_URL } from '@/config';
+import { api } from '@/lib/api';
+import { clearToken, getToken } from '@/lib/session';
 
 
 async function doCheckout(bookingId: string, onSuccess: (id: string) => void) {
   try {
-    const res = await fetch(`${API_URL}/bookings/${bookingId}/checkout`, {
-      method: 'POST',
-    });
-    if (!res.ok) {
-      const text = await res.text();
-      Alert.alert('Checkout failed', text.slice(0, 240));
-      return;
-    }
+    await api(`/bookings/${bookingId}/checkout`, { method: 'POST' });
     onSuccess(bookingId);
-  } catch {
-    Alert.alert('Network error', 'Is the backend running?');
+  } catch (e: any) {
+    Alert.alert('Checkout failed', e.message ?? 'Is the backend running?');
   }
 }
 
@@ -44,82 +39,78 @@ export default function HomeScreen() {
   const [bookingId, setBookingId] = useState<string | null>(null);
   const [roomId, setRoomId] = useState<'room1' | 'room2'>('room1');
 
-  useEffect(() => {
-  setConnected(false);
-  setState(null);
-  setGuestName(null);
-  setBookingId(null);
+   useEffect(() => {
+     setConnected(false);
+     setState(null);
+     setGuestName(null);
+     setBookingId(null);
 
-  // initial state fetch
-  fetch(`${API_URL}/rooms/${roomId}/state`)
-    .then((r) => r.json())
-    .then(setState)
-    .catch((e) => console.warn('initial fetch failed', e));
+     // no token yet: go to the sign-in screen
+     getToken().then((t) => {
+       if (!t) router.replace('/signin');
+     });
 
-  // websocket
-  const ws = new WebSocket(`${WS_URL}?room_id=${roomId}`);
-  wsRef.current = ws;
-  ws.onopen = () => setConnected(true);
-  ws.onclose = () => setConnected(false);
-  ws.onerror = () => setConnected(false);
-  ws.onmessage = (e) => {
-    try {
-      const msg = JSON.parse(e.data);
-      if (msg.type === 'state') setState(msg.data);
-    } catch (err) {
-      console.warn('bad ws message', err);
-    }
-  };
+   api<RoomState>(`/rooms/${roomId}/state`)
+     .then(setState)
+     .catch((e) => {
+       console.warn('initial fetch failed', e.message);
+       if (e.status === 401) router.replace('/signin');
+     });
 
-  // active booking
-  fetch(`${API_URL}/bookings/active?room_id=${roomId}`)
-    .then((r) => r.json())
-    .then((b) => {
-      if (b && b.id) {
-        setBookingId(b.id);
-        fetch(`${API_URL}/guests/${b.guest_id}`)
-          .then((r) => r.json())
-          .then((g) => setGuestName(g.name))
-          .catch(() => {});
-      }
-    })
-    .catch(() => {});
+     const ws = new WebSocket(`${WS_URL}?room_id=${roomId}`);
+     wsRef.current = ws;
+     ws.onopen = () => {
+       setConnected(true);
+       // the server expects the token as the very first message
+       getToken().then((t) => ws.send(JSON.stringify({ type: 'auth', token: t ?? '' })));
+     };
+     ws.onclose = () => setConnected(false);
+     ws.onerror = () => setConnected(false);
+     ws.onmessage = (e) => {
+       try {
+         const msg = JSON.parse(e.data);
+         if (msg.type === 'state') setState(msg.data);
+       } catch (err) {
+         console.warn('bad ws message', err);
+       }
+     };
 
-  return () => {
-    ws.close();
-  };
-}, [roomId]);
+     api(`/bookings/active?room_id=${roomId}`)
+       .then((b) => {
+         if (b && b.id) {
+           setBookingId(b.id);
+           api(`/guests/${b.guest_id}`)
+             .then((g) => setGuestName(g.name))
+             .catch(() => {});
+         }
+       })
+       .catch(() => {});
 
-  async function sendCommand(device: string, value: Record<string, any>) {
-    try {
-      const res = await fetch(`${API_URL}/rooms/${roomId}/device/${device}/command`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(value),
-      });
-      console.log('POST /room/' + device + '/command', res.status);
-      if (!res.ok) {
-        const text = await res.text();
-        Alert.alert('Rejected', text.slice(0, 240));
-      }
-    } catch (err) {
-      Alert.alert('Network error', 'Is the backend running?');
-    }
-  }
+     return () => {
+       ws.close();
+     };
+   }, [roomId]);
 
-  async function runScene(name: string) {
-  try {
-    const res = await fetch(`${API_URL}/rooms/${roomId}/scenes/${name}`, {
-      method: 'POST',
-    });
-    if (!res.ok) {
-      const text = await res.text();
-      Alert.alert('Scene failed', text.slice(0, 240));
-    }
-  } catch {
-    Alert.alert('Network error', 'Is the backend running?');
-  }
-}
+   async function signOut() {
+     await clearToken();
+     router.replace('/signin');
+   }
+
+   async function sendCommand(device: string, value: Record<string, any>) {
+     try {
+       await api(`/rooms/${roomId}/device/${device}/command`, { method: 'POST', body: value });
+     } catch (e: any) {
+       Alert.alert('Rejected', e.message ?? 'Is the backend running?');
+     }
+   }
+
+   async function runScene(name: string) {
+     try {
+       await api(`/rooms/${roomId}/scenes/${name}`, { method: 'POST' });
+     } catch (e: any) {
+       Alert.alert('Scene failed', e.message ?? 'Is the backend running?');
+     }
+   }
 
   if (!state || !state.devices) {
   return (
@@ -171,6 +162,9 @@ export default function HomeScreen() {
   </Pressable>
 )}
 
+   <Pressable onPress={signOut} style={styles.signOutBtn}>
+     <Text style={styles.signOutText}>Sign out</Text>
+   </Pressable>
 
       <View style={styles.sceneRow}>
   <Pressable style={styles.sceneBtn} onPress={() => runScene('good_morning')}>
@@ -447,4 +441,6 @@ checkoutText: {
   fontSize: 13,
   letterSpacing: 1,
 },
+   signOutBtn: { alignSelf: 'flex-end', paddingVertical: 6, paddingHorizontal: 4 },
+   signOutText: { color: '#8a94a3', fontSize: 12, letterSpacing: 1 },
 });

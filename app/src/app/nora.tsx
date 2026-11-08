@@ -4,7 +4,7 @@ import {
   KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
-import { API_URL } from '@/config';
+import { api } from '@/lib/api';
 
 
 
@@ -30,39 +30,20 @@ const roomId = params.room_id ?? 'room1';
   const [guestName, setGuestName] = useState<string | null>(null);
 const [bookingId, setBookingId] = useState<string | null>(null);
 
-useEffect(() => {
-  console.log('NORA: fetching active booking...');
-  fetch(`${API_URL}/bookings/active?room_id=${roomId}`)
-    .then((r) => {
-      console.log('NORA: active status', r.status);
-      return r.json();
-    })
-    .then((b) => {
-      console.log('NORA: active payload', b);
-      if (b && b.id) {
-        setBookingId(b.id);
-        fetch(`${API_URL}/guests/${b.guest_id}`)
-          .then((r) => {
-            console.log('NORA: guest status', r.status);
-            return r.json();
-          })
-          .then((g) => {
-            console.log('NORA: guest payload', g);
-            setGuestName(g.name);
-            setMessages([
-              {
-                role: 'nora',
-                text: `Hi ${g.name.split(' ')[0]}, welcome back. What can I do for you?`,
-              },
-            ]);
-          })
-          .catch((e) => console.log('NORA: guest fetch error', e));
-      } else {
-        console.log('NORA: no active booking');
-      }
-    })
-    .catch((e) => console.log('NORA: active fetch error', e));
-}, [roomId]);
+   useEffect(() => {
+     api(`/bookings/active?room_id=${roomId}`)
+       .then(async (b) => {
+         if (b && b.id) {
+           setBookingId(b.id);
+           const g = await api(`/guests/${b.guest_id}`);
+           setGuestName(g.name);
+           setMessages([
+             { role: 'nora', text: `Hi ${g.name.split(' ')[0]}, welcome back. What can I do for you?` },
+           ]);
+         }
+       })
+       .catch((e) => console.log('NORA: lookup failed', e.message));
+   }, [roomId]);
   useEffect(() => {
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
   }, [messages]);
@@ -74,12 +55,10 @@ useEffect(() => {
     setMessages((m) => [...m, { role: 'user', text }]);
     setBusy(true);
     try {
-      const res = await fetch(`${API_URL}/nora/chat`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ session_id: 'demo', message: text, booking_id: bookingId, room_id: roomId }),
-      });
-      const data = await res.json();
+   const data = await api('/nora/chat', {
+     method: 'POST',
+     body: { session_id: 'demo', message: text, booking_id: bookingId, room_id: roomId },
+   });
       setMessages((m) => [
         ...m,
         { role: 'nora', text: data.reply ?? '(no reply)', actions: data.actions },
