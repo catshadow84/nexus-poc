@@ -1,12 +1,12 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Text, View, StyleSheet, Pressable, ScrollView, Alert,
 } from 'react-native';
 import Slider from '@react-native-community/slider';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { WS_URL } from '@/config';
 import { api } from '@/lib/api';
-import { clearToken, getToken } from '@/lib/session';
+import { clearToken, getToken, getTrip } from '@/lib/session';
 
 
 async function doCheckout(bookingId: string, onSuccess: (id: string) => void) {
@@ -32,6 +32,7 @@ type RoomState = {
 };
 
 export default function HomeScreen() {
+  const [isGuest, setIsGuest] = useState(false);
   const [guestName, setGuestName] = useState<string | null>(null);
   const [state, setState] = useState<RoomState | null>(null);
   const [connected, setConnected] = useState(false);
@@ -40,28 +41,25 @@ export default function HomeScreen() {
   const [roomId, setRoomId] = useState<'room1' | 'room2'>('room1');
 
    useEffect(() => {
+     let cancelled = false;
      setConnected(false);
      setState(null);
      setGuestName(null);
      setBookingId(null);
 
-     // no token yet: go to the sign-in screen
-     getToken().then((t) => {
-       if (!t) router.replace('/signin');
-     });
-
-   api<RoomState>(`/rooms/${roomId}/state`)
-     .then(setState)
-     .catch((e) => {
-       console.warn('initial fetch failed', e.message);
-       if (e.status === 401) router.replace('/signin');
-     });
+     api<RoomState>(`/rooms/${roomId}/state`)
+       .then((s) => {
+         if (!cancelled) setState(s);
+       })
+       .catch((e) => {
+         console.warn('initial fetch failed', e.message);
+         if (e.status === 401) router.replace('/search');
+       });
 
      const ws = new WebSocket(`${WS_URL}?room_id=${roomId}`);
      wsRef.current = ws;
      ws.onopen = () => {
        setConnected(true);
-       // the server expects the token as the very first message
        getToken().then((t) => ws.send(JSON.stringify({ type: 'auth', token: t ?? '' })));
      };
      ws.onclose = () => setConnected(false);
@@ -75,25 +73,71 @@ export default function HomeScreen() {
        }
      };
 
-     api(`/bookings/active?room_id=${roomId}`)
-       .then((b) => {
-         if (b && b.id) {
+     (async () => {
+       const token = await getToken();
+       if (!token) {
+         router.replace('/search');
+         return;
+       }
+       const trip = await getTrip();
+       try {
+         if (trip) {
+           // a guest: their own booking only, and only once checked in
+           setIsGuest(true);
+           const b = await api(`/bookings/${trip.bookingId}`);
+           if (cancelled) return;
+           if (b.status !== 'CHECKED_IN') {
+             router.replace('/trips');
+             return;
+           }
+           setRoomId(b.room_id);
            setBookingId(b.id);
-           api(`/guests/${b.guest_id}`)
-             .then((g) => setGuestName(g.name))
-             .catch(() => {});
+           const g = await api(`/guests/${b.guest_id}`);
+           if (!cancelled) setGuestName(g.name);
+         } else {
+           // staff: look up whoever is in this room
+           setIsGuest(false);
+           const b = await api(`/bookings/active?room_id=${roomId}`);
+           if (b && b.id && !cancelled) {
+             setBookingId(b.id);
+             const g = await api(`/guests/${b.guest_id}`);
+             if (!cancelled) setGuestName(g.name);
+           }
          }
-       })
-       .catch(() => {});
+       } catch (e: any) {
+         if (e?.status === 401) router.replace('/search');
+       }
+     })();
 
      return () => {
+       cancelled = true;
        ws.close();
      };
    }, [roomId]);
 
+   // When the screen comes back into view (for example after the summary),
+   // a guest whose stay is over goes back to "My trip".
+   useFocusEffect(
+     useCallback(() => {
+       let live = true;
+       (async () => {
+         const trip = await getTrip();
+         if (!trip) return;
+         try {
+           const b = await api(`/bookings/${trip.bookingId}`);
+           if (live && b.status !== 'CHECKED_IN') router.replace('/trips');
+         } catch {
+           // a 401 is handled by the main effect
+         }
+       })();
+       return () => {
+         live = false;
+       };
+     }, []),
+   );
    async function signOut() {
      await clearToken();
-     router.replace('/signin');
+     router.replace('/search');
    }
 
    async function sendCommand(device: string, value: Record<string, any>) {
@@ -133,7 +177,7 @@ export default function HomeScreen() {
           {connected ? '● live' : '○ offline'}
         </Text>
       </View>
-      <View style={styles.roomRow}>
+      {!isGuest && (<View style={styles.roomRow}>
   {(['room1', 'room2'] as const).map((r) => (
     <Pressable
       key={r}
@@ -145,7 +189,7 @@ export default function HomeScreen() {
       </Text>
     </Pressable>
   ))}
-</View>
+</View>)}
       {guestName && (
   <Text style={styles.welcome}>Welcome, {guestName}</Text>
 )}

@@ -29,4 +29,38 @@ export async function clearToken(): Promise<void> {
   } catch {
     // nothing to delete
   }
+    await clearTrip();
+}
+
+const TRIP_KEY = 'nexus.trip';
+export type Trip = { bookingId: string; guestId: string };
+let cachedTrip: Trip | null | undefined;
+
+export async function getTrip(): Promise<Trip | null> {
+  if (cachedTrip !== undefined) return cachedTrip;
+  try {
+    const raw = await SecureStore.getItemAsync(TRIP_KEY);
+    cachedTrip = raw ? (JSON.parse(raw) as Trip) : null;
+  } catch {
+    cachedTrip = null;
+  }
+  return cachedTrip;
+}
+
+export async function setTrip(trip: Trip): Promise<void> {
+  cachedTrip = trip;
+  try {
+    await SecureStore.setItemAsync(TRIP_KEY, JSON.stringify(trip));
+  } catch (e) {
+    console.warn('could not save trip', e);
+  }
+}
+
+export async function clearTrip(): Promise<void> {
+  cachedTrip = null;
+  try {
+    await SecureStore.deleteItemAsync(TRIP_KEY);
+  } catch {
+    // nothing to delete
+  }
 }
