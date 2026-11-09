@@ -168,6 +168,7 @@ export default function HomeScreen() {
   const light = state.devices.light?.reported ?? {};
   const ac = state.devices.central_ac?.reported ?? {};
   const bose = state.devices.bose?.reported ?? {};
+  const door = state.devices.door?.reported ?? {};
   const curtain = state.devices.curtain?.reported ?? {};
 
   return (
@@ -443,6 +444,17 @@ export default function HomeScreen() {
          </View>      
 
       <View style={{ height: 40 }} />
+         {/* ---- DOOR ---- */}
+         <View style={styles.card}>
+           <Text style={styles.cardTitle}>Door</Text>
+           <Text style={styles.value}>{door.locked === false ? 'Unlocked' : 'Locked'}</Text>
+           <Pressable
+             style={[styles.btn, door.locked === false && styles.btnActive]}
+             onPress={() => sendCommand('door', { locked: false })}
+           >
+             <Text style={styles.btnText}>Unlock door</Text>
+           </Pressable>
+         </View>      
     </ScrollView>
   );
 }

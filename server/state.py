@@ -7,7 +7,7 @@ class StateStore:
     def __init__(self, room_id: str):
         self.room_id = room_id
         self.room = RoomState(room_id=room_id)
-        for dev in ("light", "central_ac", "bose", "curtain"):
+        for dev in ("light", "central_ac", "bose", "curtain", "door"):
             self.room.devices[dev] = DeviceState()
 
     def set_desired(self, device: DeviceId, value: dict, command_id: UUID):

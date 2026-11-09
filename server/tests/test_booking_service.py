@@ -97,6 +97,7 @@ async def test_check_out_resets_the_room(session, make_booking, published):
           "nexus/room2/central_ac/command": {"target_c": 26.0, "mode": "eco"},
           "nexus/room2/curtain/command": {"open_pct": 0},
           "nexus/room2/bose/command": {"power": "off", "volume": 20, "playing": False},
+          "nexus/room2/door/command": {"locked": True},
     }
 
 

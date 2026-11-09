@@ -60,6 +60,15 @@ class CurtainDevice(Device):
         from .schemas import CurtainValue
         return CurtainValue(**value)
 
+class DoorDevice(Device):
+    id = "door"
+
+    def __init__(self, room_id: str):
+        self.topic_base = f"nexus/{room_id}/door"
+
+    def validate(self, value):
+        from .schemas import DoorValue
+        return DoorValue(**value)
 
 class DeviceRegistry:
     def __init__(self, room_id: str):
@@ -68,6 +77,7 @@ class DeviceRegistry:
             "light": LightDevice(room_id),
             "central_ac": CentralAcDevice(room_id),
             "bose": BoseDevice(room_id),
+            "door": DoorDevice(room_id),
             "curtain": CurtainDevice(room_id),
         }
 

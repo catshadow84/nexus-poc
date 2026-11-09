@@ -51,6 +51,7 @@ async def _reset_room(room_id: str) -> None:
         "central_ac": {"target_c": 26.0, "mode": "eco"},
         "curtain": {"open_pct": 0},
         "bose": {"power": "off", "volume": 20, "playing": False},
+        "door": {"locked": True},
     }
     store = get_store(room_id)
     registry = get_registry(room_id)

@@ -12,7 +12,7 @@ log = logging.getLogger("sim")
 
 
 ROOMS = ("room1", "room2")
-DEVICES = ("light", "central_ac", "bose", "curtain")
+DEVICES = ("light", "central_ac", "bose", "curtain", "door")
 
 state = {
     room: {
@@ -20,6 +20,7 @@ state = {
         "central_ac": {"current_c": 24.0, "target_c": 24.0, "mode": "cool", "power_kw": 0.3},
         "bose": {"power": "off", "volume": 20, "playing": False},
         "curtain": {"open_pct": 0},
+        "door": {"locked": True},
     }
     for room in ROOMS
 }
@@ -97,12 +98,21 @@ async def handle_curtain(client, room, value):
         await publish_state(client, room, "curtain")
         await asyncio.sleep(0.15)
 
+async def handle_door(client, room, value):
+    st = state[room]["door"]
+    st["locked"] = bool(value.get("locked", True))
+    await publish_state(client, room, "door")
+    if not st["locked"]:
+        await asyncio.sleep(5)  # the door locks itself again
+        st["locked"] = True
+        await publish_state(client, room, "door")
 
 HANDLERS = {
     "light": handle_light,
     "central_ac": handle_central_ac,
     "bose": handle_bose,
     "curtain": handle_curtain,
+    "door": handle_door,
 }
 
 

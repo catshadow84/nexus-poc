@@ -5,7 +5,7 @@ from datetime import datetime, timezone, date
 from .timeutil import utcnow
 
 
-DeviceId = Literal["light", "central_ac", "bose", "curtain"]
+DeviceId = Literal["light", "central_ac", "bose", "curtain", "door"]
 
 
 class CommandPayload(BaseModel):
@@ -135,3 +135,6 @@ class OrderIn(BaseModel):
 
 class GuestUpdate(BaseModel):
     name: str = Field(min_length=1, max_length=120)
+
+class DoorValue(BaseModel):
+    locked: bool

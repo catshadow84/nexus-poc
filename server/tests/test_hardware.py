@@ -2,7 +2,8 @@ import pytest
 from pydantic import ValidationError
 
 from server.booking_service import check_in, check_out
-from server.schemas import BoseValue, CentralAcValue
+from server.schemas import BoseValue, CentralAcValue, DoorValue
+from server.auth import issue_guest_token
 
 STAFF_KEY = "test-staff-key-0123456789-0123456789"
 STAFF = {"Authorization": f"Bearer {STAFF_KEY}"}
@@ -66,3 +67,46 @@ async def test_the_old_thermostat_device_no_longer_exists(client):
         headers=STAFF,
     )
     assert response.status_code == 404
+
+
+
+async def guest_headers(session, booking) -> dict:
+    token = await issue_guest_token(session, booking)
+    await session.commit()
+    return {"Authorization": f"Bearer {token}"}
+
+
+def test_door_value_needs_a_boolean():
+    assert DoorValue(locked=False).locked is False
+    with pytest.raises(ValidationError):
+        DoorValue(locked="maybe")
+
+
+async def test_guest_cannot_unlock_before_check_in(client, session, make_booking):
+    booking = await make_booking(room_id="room1")
+    headers = await guest_headers(session, booking)
+    response = await client.post("/rooms/room1/device/door/command", json={"locked": False}, headers=headers)
+    assert response.status_code == 403
+
+
+async def test_checked_in_guest_unlocks_own_door_but_not_another(client, session, make_booking, published):
+    booking = await make_booking(room_id="room1")
+    headers = await guest_headers(session, booking)
+    await check_in(session, booking)
+    published.clear()
+
+    own = await client.post("/rooms/room1/device/door/command", json={"locked": False}, headers=headers)
+    other = await client.post("/rooms/room2/device/door/command", json={"locked": False}, headers=headers)
+
+    assert own.status_code == 200
+    assert other.status_code == 403
+    assert commands_by_topic(published) == {"nexus/room1/door/command": {"locked": False}}
+
+
+async def test_guest_cannot_unlock_after_check_out(client, session, make_booking):
+    booking = await make_booking(room_id="room1")
+    headers = await guest_headers(session, booking)
+    await check_in(session, booking)
+    await check_out(session, booking)
+    response = await client.post("/rooms/room1/device/door/command", json={"locked": False}, headers=headers)
+    assert response.status_code == 403
