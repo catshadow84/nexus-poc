@@ -5,7 +5,7 @@ from datetime import datetime, timezone, date
 from .timeutil import utcnow
 
 
-DeviceId = Literal["light", "thermostat", "curtain"]
+DeviceId = Literal["light", "central_ac", "bose", "curtain"]
 
 
 class CommandPayload(BaseModel):
@@ -27,10 +27,15 @@ class LightValue(BaseModel):
     color: Literal["warm", "neutral", "cool"]
 
 
-class ThermostatValue(BaseModel):
+class CentralAcValue(BaseModel):
     target_c: float = Field(ge=10, le=32)
-    mode: Literal["cool", "heat", "auto", "off"]
+    mode: Literal["cool", "heat", "auto", "off", "eco"]
 
+
+class BoseValue(BaseModel):
+    power: Literal["on", "off"]
+    volume: int = Field(ge=0, le=100)
+    playing: bool = False
 
 class CurtainValue(BaseModel):
     open_pct: int = Field(ge=0, le=100)

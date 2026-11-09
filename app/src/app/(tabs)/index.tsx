@@ -166,7 +166,8 @@ export default function HomeScreen() {
 }
 
   const light = state.devices.light?.reported ?? {};
-  const thermo = state.devices.thermostat?.reported ?? {};
+  const ac = state.devices.central_ac?.reported ?? {};
+  const bose = state.devices.bose?.reported ?? {};
   const curtain = state.devices.curtain?.reported ?? {};
 
   return (
@@ -327,28 +328,46 @@ export default function HomeScreen() {
         </View>
       </View>
 
-      {/* ---- THERMOSTAT ---- */}
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>Thermostat</Text>
-        <Text style={styles.value}>
-          Now {thermo.current_c ?? '—'}°C · Target {thermo.target_c ?? '—'}°C · {thermo.mode ?? 'cool'}
-        </Text>
+         {/* ---- CENTRAL AC ---- */}
+         <View style={styles.card}>
+           <Text style={styles.cardTitle}>Central AC</Text>
+           <Text style={styles.value}>
+             Now {ac.current_c ?? '—'}°C · Target {ac.target_c ?? '—'}°C · {ac.mode ?? 'cool'}
+             {ac.power_kw != null ? ` · ${ac.power_kw} kW` : ''}
+           </Text>
 
-        <Text style={styles.sliderLabel}>Target temperature</Text>
-        <Slider
-          style={styles.slider}
-          minimumValue={16}
-          maximumValue={30}
-          step={0.5}
-          value={thermo.target_c ?? 22}
-          onSlidingComplete={(v) =>
-            sendCommand('thermostat', {
-              target_c: Number(v.toFixed(1)),
-              mode: thermo.mode || 'cool',
-            })
-          }
-        />
-      </View>
+           <View style={styles.row}>
+             {(['cool', 'heat', 'eco', 'off'] as const).map((m) => (
+               <Pressable
+                 key={m}
+                 style={[styles.chip, ac.mode === m && styles.chipActive]}
+                 onPress={() =>
+                   sendCommand('central_ac', {
+                     target_c: m === 'eco' ? 26 : (ac.target_c ?? 22),
+                     mode: m,
+                   })
+                 }
+               >
+                 <Text style={styles.chipText}>{m}</Text>
+               </Pressable>
+             ))}
+           </View>
+
+           <Text style={styles.sliderLabel}>Target temperature</Text>
+           <Slider
+             style={styles.slider}
+             minimumValue={16}
+             maximumValue={30}
+             step={0.5}
+             value={ac.target_c ?? 22}
+             onSlidingComplete={(v) =>
+               sendCommand('central_ac', {
+                 target_c: Number(v.toFixed(1)),
+                 mode: ac.mode && ac.mode !== 'off' ? ac.mode : 'cool',
+               })
+             }
+           />
+         </View>
 
       {/* ---- CURTAIN ---- */}
       <View style={styles.card}>
@@ -367,6 +386,61 @@ export default function HomeScreen() {
           }
         />
       </View>
+         {/* ---- BOSE ---- */}
+         <View style={styles.card}>
+           <Text style={styles.cardTitle}>Bose speaker</Text>
+           <Text style={styles.value}>
+             {bose.power === 'on'
+               ? `On · volume ${bose.volume ?? 0} · ${bose.playing ? 'playing' : 'paused'}`
+               : 'Off'}
+           </Text>
+
+           <Pressable
+             style={[styles.btn, bose.power === 'on' && styles.btnActive]}
+             onPress={() =>
+               sendCommand('bose', {
+                 power: bose.power === 'on' ? 'off' : 'on',
+                 volume: bose.volume ?? 25,
+                 playing: false,
+               })
+             }
+           >
+             <Text style={styles.btnText}>{bose.power === 'on' ? 'Turn Off' : 'Turn On'}</Text>
+           </Pressable>
+
+           {bose.power === 'on' && (
+             <>
+               <Pressable
+                 style={[styles.btn, { marginTop: 8 }]}
+                 onPress={() =>
+                   sendCommand('bose', {
+                     power: 'on',
+                     volume: bose.volume ?? 25,
+                     playing: !bose.playing,
+                   })
+                 }
+               >
+                 <Text style={styles.btnText}>{bose.playing ? 'Pause' : 'Play'}</Text>
+               </Pressable>
+
+               <Text style={styles.sliderLabel}>Volume</Text>
+               <Slider
+                 style={styles.slider}
+                 minimumValue={0}
+                 maximumValue={100}
+                 step={5}
+                 value={bose.volume ?? 20}
+                 onSlidingComplete={(v) =>
+                   sendCommand('bose', {
+                     power: 'on',
+                     volume: Math.round(v),
+                     playing: !!bose.playing,
+                   })
+                 }
+               />
+             </>
+           )}
+         </View>      
 
       <View style={{ height: 40 }} />
     </ScrollView>

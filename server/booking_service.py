@@ -18,6 +18,7 @@ CHECKED_IN = "CHECKED_IN"
 CHECKED_OUT = "CHECKED_OUT"
 CANCELED = "CANCELED"
 NO_SHOW = "NO_SHOW"
+LEGACY_DEVICE_IDS = {"thermostat": "central_ac"}
 
 
 # ---------- helpers ----------
@@ -29,6 +30,7 @@ async def _apply_preferences(room_id: str, guest: Guest) -> list[str]:
     registry = get_registry(room_id)
     for device_id, value in (guest.preferences or {}).items():
         try:
+            device_id = LEGACY_DEVICE_IDS.get(device_id, device_id)
             dev = registry.get(device_id)
             cmd = dev.make_command(value)
         except Exception as e:
@@ -46,8 +48,9 @@ async def _apply_preferences(room_id: str, guest: Guest) -> list[str]:
 async def _reset_room(room_id: str) -> None:
     defaults = {
         "light": {"power": "off", "brightness": 0, "color": "neutral"},
-        "thermostat": {"target_c": 22.0, "mode": "cool"},
+        "central_ac": {"target_c": 26.0, "mode": "eco"},
         "curtain": {"open_pct": 0},
+        "bose": {"power": "off", "volume": 20, "playing": False},
     }
     store = get_store(room_id)
     registry = get_registry(room_id)

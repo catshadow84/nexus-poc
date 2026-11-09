@@ -59,6 +59,8 @@ async def lifespan(app: FastAPI):
         if len(parts) != 4 or parts[3] != "state":
             return
         room_id, device_id = parts[1], parts[2]
+        if device_id not in get_store(room_id).room.devices:
+            return  # for example an old retained message from a device we no longer use        
         reported = payload.get("reported", {})
         get_store(room_id).set_reported(device_id, reported)
         logging.info("state updated room=%s %s -> %s", room_id, device_id, reported)

@@ -10,7 +10,7 @@ from server.booking_service import (
 
 FULL_PREFS = {
     "light": {"power": "on", "brightness": 60, "color": "warm"},
-    "thermostat": {"target_c": 21, "mode": "cool"},
+    "central_ac": {"target_c": 21, "mode": "cool"},
     "curtain": {"open_pct": 30},
 }
 
@@ -29,10 +29,10 @@ async def test_check_in_marks_booking_checked_in(session, make_booking):
 async def test_check_in_applies_guest_preferences(session, make_booking, published):
     booking = await make_booking(preferences=FULL_PREFS)
     result = await check_in(session, booking)
-    assert sorted(result["applied_devices"]) == ["curtain", "light", "thermostat"]
+    assert sorted(result["applied_devices"]) == ["central_ac", "curtain", "light"]
     assert commands_by_topic(published) == {
         "nexus/room1/light/command": {"power": "on", "brightness": 60, "color": "warm"},
-        "nexus/room1/thermostat/command": {"target_c": 21, "mode": "cool"},
+        "nexus/room1/central_ac/command": {"target_c": 21, "mode": "cool"},
         "nexus/room1/curtain/command": {"open_pct": 30},
     }
 
@@ -94,8 +94,9 @@ async def test_check_out_resets_the_room(session, make_booking, published):
     assert booking.actual_check_out is not None
     assert commands_by_topic(published) == {
         "nexus/room2/light/command": {"power": "off", "brightness": 0, "color": "neutral"},
-        "nexus/room2/thermostat/command": {"target_c": 22.0, "mode": "cool"},
-        "nexus/room2/curtain/command": {"open_pct": 0},
+          "nexus/room2/central_ac/command": {"target_c": 26.0, "mode": "eco"},
+          "nexus/room2/curtain/command": {"open_pct": 0},
+          "nexus/room2/bose/command": {"power": "off", "volume": 20, "playing": False},
     }
 
 

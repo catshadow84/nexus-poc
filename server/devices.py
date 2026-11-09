@@ -28,15 +28,26 @@ class LightDevice(Device):
         return LightValue(**value)
 
 
-class ThermostatDevice(Device):
-    id = "thermostat"
+class CentralAcDevice(Device):
+    id = "central_ac"
 
     def __init__(self, room_id: str):
-        self.topic_base = f"nexus/{room_id}/thermostat"
+        self.topic_base = f"nexus/{room_id}/central_ac"
 
     def validate(self, value):
-        from .schemas import ThermostatValue
-        return ThermostatValue(**value)
+        from .schemas import CentralAcValue
+        return CentralAcValue(**value)
+
+
+class BoseDevice(Device):
+    id = "bose"
+
+    def __init__(self, room_id: str):
+        self.topic_base = f"nexus/{room_id}/bose"
+
+    def validate(self, value):
+        from .schemas import BoseValue
+        return BoseValue(**value)
 
 
 class CurtainDevice(Device):
@@ -55,7 +66,8 @@ class DeviceRegistry:
         self.room_id = room_id
         self.devices: dict[str, Device] = {
             "light": LightDevice(room_id),
-            "thermostat": ThermostatDevice(room_id),
+            "central_ac": CentralAcDevice(room_id),
+            "bose": BoseDevice(room_id),
             "curtain": CurtainDevice(room_id),
         }
 

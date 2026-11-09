@@ -35,8 +35,14 @@ async def tool_set_light(session, room_id="room1", power="off", brightness=80, c
     return await _issue_command(room_id, "light", {"power": power, "brightness": brightness, "color": color})
 
 
-async def tool_set_thermostat(session, room_id="room1", target_c=22, mode="cool", **_):
-    return await _issue_command(room_id, "thermostat", {"target_c": float(target_c), "mode": mode})
+async def tool_set_central_ac(session, room_id="room1", target_c=22, mode="cool", **_):
+    return await _issue_command(room_id, "central_ac", {"target_c": float(target_c), "mode": mode})
+
+
+async def tool_set_bose(session, room_id="room1", power="on", volume=25, playing=True, **_):
+    return await _issue_command(
+        room_id, "bose", {"power": power, "volume": int(volume), "playing": bool(playing)}
+    )
 
 
 async def tool_set_curtain(session, room_id="room1", open_pct=0, **_):
@@ -111,7 +117,9 @@ async def tool_checkout(session: AsyncSession, booking_id, **_):
 TOOLS = {
     "get_room_state": tool_get_room_state,
     "set_light": tool_set_light,
-    "set_thermostat": tool_set_thermostat,
+    "set_thermostat": tool_set_central_ac,  # old name, kept so NORA's plans still work
+    "set_central_ac": tool_set_central_ac,
+    "set_bose": tool_set_bose,
     "set_curtain": tool_set_curtain,
     "get_booking": tool_get_booking,
     "create_service_order": tool_create_service_order,

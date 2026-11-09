@@ -12,18 +12,21 @@ log = logging.getLogger("scenes")
 SCENES: dict[str, dict[str, dict]] = {
     "goodnight": {
         "light": {"power": "off", "brightness": 0, "color": "neutral"},
-        "thermostat": {"target_c": 19.0, "mode": "cool"},
+        "central_ac": {"target_c": 19.0, "mode": "cool"},
         "curtain": {"open_pct": 0},
+        "bose": {"power": "off", "volume": 20, "playing": False},
     },
     "good_morning": {
         "light": {"power": "on", "brightness": 60, "color": "warm"},
-        "thermostat": {"target_c": 22.0, "mode": "cool"},
+        "central_ac": {"target_c": 22.0, "mode": "cool"},
         "curtain": {"open_pct": 70},
+        "bose": {"power": "on", "volume": 25, "playing": True},
     },
     "focus": {
         "light": {"power": "on", "brightness": 100, "color": "cool"},
-        "thermostat": {"target_c": 21.0, "mode": "cool"},
+        "central_ac": {"target_c": 21.0, "mode": "cool"},
         "curtain": {"open_pct": 100},
+        "bose": {"power": "on", "volume": 15, "playing": True},
     },
 }
 

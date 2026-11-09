@@ -12,17 +12,17 @@ function buildPreferences(name: string) {
   const profiles = [
     {
       light: { power: 'on', brightness: 60, color: 'warm' },
-      thermostat: { target_c: 21, mode: 'cool' },
+      central_ac: { target_c: 21, mode: 'cool' },
       curtain: { open_pct: 30 },
     },
     {
       light: { power: 'on', brightness: 100, color: 'cool' },
-      thermostat: { target_c: 24, mode: 'cool' },
+      central_ac: { target_c: 24, mode: 'cool' },
       curtain: { open_pct: 0 },
     },
     {
       light: { power: 'off', brightness: 0, color: 'neutral' },
-      thermostat: { target_c: 19, mode: 'heat' },
+      central_ac: { target_c: 19, mode: 'heat' },
       curtain: { open_pct: 100 },
     },
   ];

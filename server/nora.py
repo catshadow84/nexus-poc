@@ -54,7 +54,7 @@ def _fallback_plan(
                 prefs_summary.append(
                     f"light {l.get('brightness', '?')}% {l.get('color', '')}".strip()
                 )
-            t = prefs.get("thermostat") or {}
+            t = prefs.get("central_ac") or prefs.get("thermostat") or {}
             if t:
                 prefs_summary.append(f"thermostat {t.get('target_c', '?')}°C")
             c = prefs.get("curtain") or {}
@@ -107,8 +107,8 @@ def _fallback_plan(
 
     if any(k in m for k in ("cold", "freezing", "warm me", "hot", "temperature", "degrees", "thermostat")):
         state = get_store(room_id).snapshot()
-        current = (state.get("devices", {}).get("thermostat", {}).get("reported") or {}).get("target_c", 22.0)
-        default_pref = (prefs.get("thermostat") or {}).get("target_c")
+        current = (state.get("devices", {}).get("central_ac", {}).get("reported") or {}).get("target_c", 22.0)
+        default_pref = (prefs.get("central_ac") or prefs.get("thermostat") or {}).get("target_c")
         nums = re.findall(r"(\d+(?:\.\d+)?)", m)
         if nums:
             target = float(nums[0])
@@ -157,18 +157,29 @@ def _fallback_plan(
             "calls": [("create_service_order", {"item": item, "quantity": 1})],
         }
 
+    if any(k in m for k in ("music", "speaker", "volume", "bose", "pause")):
+        nums = re.findall(r"(\d+)", m)
+        if "off" in m or "stop" in m or "pause" in m:
+            value = {"power": "off" if "off" in m else "on", "volume": 20, "playing": False}
+            reply = "turning the music off." if "off" in m else "pausing the music."
+        else:
+            vol = max(0, min(100, int(nums[0]))) if nums else 25
+            value = {"power": "on", "volume": vol, "playing": True}
+            reply = f"playing music at volume {vol}."
+        return {"reply": addr(reply), "calls": [("set_bose", value)]}        
+
     # ---- state ----
 
     if any(k in m for k in ("how", "what", "state", "status", "currently")):
         s = get_store(room_id).snapshot()
         dev = s.get("devices", {})
         light = dev.get("light", {}).get("reported") or {}
-        thermo = dev.get("thermostat", {}).get("reported") or {}
+        thermo = dev.get("central_ac", {}).get("reported") or {}
         cur = dev.get("curtain", {}).get("reported") or {}
         reply = (
             f"Light is {light.get('power', 'unknown')}"
             f"{(' at ' + str(light.get('brightness')) + '%') if light.get('power') == 'on' else ''}. "
-            f"Thermostat at {thermo.get('current_c', '?')}°C, target {thermo.get('target_c', '?')}°C. "
+            f"Air conditioning at {thermo.get('current_c', '?')}°C, target {thermo.get('target_c', '?')}°C. "
             f"Curtain {cur.get('open_pct', '?')}% open."
         )
         return {"reply": addr(reply), "calls": []}

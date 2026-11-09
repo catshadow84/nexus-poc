@@ -12,16 +12,26 @@ log = logging.getLogger("sim")
 
 
 ROOMS = ("room1", "room2")
-DEVICES = ("light", "thermostat", "curtain")
+DEVICES = ("light", "central_ac", "bose", "curtain")
 
 state = {
     room: {
         "light": {"power": "off", "brightness": 0, "color": "neutral"},
-        "thermostat": {"current_c": 24.0, "target_c": 24.0, "mode": "cool"},
+        "central_ac": {"current_c": 24.0, "target_c": 24.0, "mode": "cool", "power_kw": 0.3},
+        "bose": {"power": "off", "volume": 20, "playing": False},
         "curtain": {"open_pct": 0},
     }
     for room in ROOMS
 }
+
+
+def ac_power_kw(st: dict) -> float:
+    """A rough energy estimate: off uses nothing, eco is low, otherwise it grows with the gap."""
+    if st["mode"] == "off":
+        return 0.0
+    if st["mode"] == "eco":
+        return 0.3
+    return round(0.8 + 0.2 * abs(st["current_c"] - st["target_c"]), 2)
 
 
 async def publish_state(client, room, device):
@@ -32,7 +42,7 @@ async def publish_state(client, room, device):
         "reported_at": datetime.utcnow().isoformat(),
     }
     await client.publish(topic, json.dumps(payload), retain=True)
-    log.info("→ %s/%s %s", room, device, state[room][device])
+    log.info("-> %s/%s %s", room, device, state[room][device])
 
 
 async def handle_light(client, room, value):
@@ -50,18 +60,30 @@ async def handle_light(client, room, value):
     await publish_state(client, room, "light")
 
 
-async def handle_thermostat(client, room, value):
+async def handle_central_ac(client, room, value):
     target = float(value["target_c"])
-    st = state[room]["thermostat"]
+    st = state[room]["central_ac"]
     st["target_c"] = target
     st["mode"] = value.get("mode", st["mode"])
     while abs(st["current_c"] - target) > 0.05:
         step = 0.5 if target > st["current_c"] else -0.5
         st["current_c"] = round(st["current_c"] + step, 2)
-        await publish_state(client, room, "thermostat")
+        st["power_kw"] = ac_power_kw(st)
+        await publish_state(client, room, "central_ac")
         await asyncio.sleep(1.0)
     st["current_c"] = target
-    await publish_state(client, room, "thermostat")
+    st["power_kw"] = ac_power_kw(st)
+    await publish_state(client, room, "central_ac")
+
+
+async def handle_bose(client, room, value):
+    st = state[room]["bose"]
+    st["power"] = value.get("power", st["power"])
+    st["volume"] = int(value.get("volume", st["volume"]))
+    # a speaker that is off cannot be playing
+    st["playing"] = bool(value.get("playing", st["playing"])) and st["power"] == "on"
+    await asyncio.sleep(0.3)
+    await publish_state(client, room, "bose")
 
 
 async def handle_curtain(client, room, value):
@@ -78,7 +100,8 @@ async def handle_curtain(client, room, value):
 
 HANDLERS = {
     "light": handle_light,
-    "thermostat": handle_thermostat,
+    "central_ac": handle_central_ac,
+    "bose": handle_bose,
     "curtain": handle_curtain,
 }
 
@@ -97,7 +120,7 @@ async def device_loop(room: str, device: str):
                     log.warning("bad payload for %s/%s", room, device)
                     continue
                 value = payload.get("value", {})
-                log.info("← %s/%s %s", room, device, value)
+                log.info("<- %s/%s %s", room, device, value)
                 try:
                     await HANDLERS[device](client, room, value)
                 except Exception as e:
