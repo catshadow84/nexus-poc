@@ -39,10 +39,11 @@ from .apaleo import (
 
 from .auth import (
     Principal, auth_disabled, can_access_room, get_principal, issue_guest_token,
-    optional_principal, owned_booking, principal_from_token, require_staff, room_access,
+    optional_principal, owned_booking, principal_from_token, require_staff, room_access, has_role, require_role,
 )
 
 from .nora_tools import MENU, tool_create_service_order
+from .staff_routes import router as staff_router
 
 logging.basicConfig(level=logging.INFO)
 
@@ -84,6 +85,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(staff_router)
 
 
 @app.get("/health")
@@ -167,7 +170,7 @@ async def create_guest(
     guest = existing.scalar_one_or_none()
     if guest:
         # Only staff may change an existing guest's data.
-        if principal is not None and principal.is_staff:
+        if principal is not None and has_role(principal, "front_desk"):
             guest.name = payload.name
             if payload.preferences:
                 guest.preferences = payload.preferences
@@ -188,7 +191,7 @@ async def create_guest(
 @app.get("/guests/lookup")
 async def lookup_guest(
     email: str,
-    _: Principal = Depends(require_staff),
+    _: Principal = Depends(require_role("front_desk")),
     session: AsyncSession = Depends(get_session),
 ):
     result = await session.execute(
@@ -227,7 +230,7 @@ async def read_guest(
     principal: Principal = Depends(get_principal),
     session: AsyncSession = Depends(get_session),
 ):
-    if not (principal.is_staff or principal.guest_id == guest_id):
+    if not (has_role(principal, "front_desk") or principal.guest_id == guest_id):
         raise HTTPException(404, "guest not found")
     g = await get_guest(session, guest_id)
     if not g:
@@ -241,7 +244,7 @@ async def read_guest(
 @app.post("/bookings", response_model=BookingOut)
 async def create_booking(
     payload: BookingCreate,
-    _: Principal = Depends(require_staff),
+    _: Principal = Depends(require_role("front_desk")),
     session: AsyncSession = Depends(get_session),
 ):
     g = await get_guest(session, payload.guest_id)
@@ -399,7 +402,7 @@ async def create_apaleo_booking(
 async def active_booking(
     room_id: str = "room1",
     session: AsyncSession = Depends(get_session),
-    _: Principal = Depends(require_staff),
+    _: Principal = Depends(require_role("front_desk")),
 ):
     result = await session.execute(
         select(Booking)
@@ -474,7 +477,7 @@ async def read_booking(b: Booking = Depends(owned_booking)):
 
 @app.get("/bookings", response_model=list[BookingOut])
 async def list_bookings(
-    _: Principal = Depends(require_staff),
+    _: Principal = Depends(require_role("front_desk")),
     session: AsyncSession = Depends(get_session),
 ):
     result = await session.execute(select(Booking).order_by(Booking.created_at.desc()))
@@ -510,7 +513,7 @@ async def do_check_out(
 @app.post("/bookings/{booking_id}/token")
 async def reissue_token(
     b: Booking = Depends(owned_booking),
-    _: Principal = Depends(require_staff),
+    _: Principal = Depends(require_role("front_desk")),
     session: AsyncSession = Depends(get_session),
 ):
     """Staff only: issue a fresh guest token. Older tokens stop working."""
@@ -572,7 +575,7 @@ def _booking_row(b: Booking, g: Guest) -> dict:
 @app.get("/staff/overview")
 async def staff_overview(
     day: date | None = None,
-    _: Principal = Depends(require_staff),
+    _: Principal = Depends(require_role("front_desk")),
     session: AsyncSession = Depends(get_session),
 ):
     day = day or utcnow().date()
@@ -600,7 +603,7 @@ async def staff_overview(
 @app.get("/staff/search")
 async def staff_search(
     q: str,
-    _: Principal = Depends(require_staff),
+    _: Principal = Depends(require_role("front_desk")),
     session: AsyncSession = Depends(get_session),
 ):
     term = q.strip().replace("%", "").replace("_", "")
@@ -631,7 +634,7 @@ async def update_guest(
     principal: Principal = Depends(get_principal),
     session: AsyncSession = Depends(get_session),
 ):
-    if not (principal.is_staff or principal.guest_id == guest_id):
+    if not (has_role(principal, "front_desk") or principal.guest_id == guest_id):
         raise HTTPException(404, "guest not found")
     g = await get_guest(session, guest_id)
     if not g:
@@ -655,7 +658,7 @@ async def run_scene(name: str, room_id: str = Depends(room_access)):
     return {"ok": True, "scene": name, "applied_devices": applied}
 
 @app.get("/rooms")
-def list_rooms(_: Principal = Depends(require_staff)):
+def list_rooms(_: Principal = Depends(require_role("front_desk", "housekeeping", "maintenance"))):
     return {"rooms": list(all_stores().keys())}
 
 
@@ -666,7 +669,7 @@ async def nora_chat(
     session: AsyncSession = Depends(get_session),
 ):
     booking_id = payload.booking_id
-    if not principal.is_staff:
+    if not has_role(principal, "front_desk"):
         if booking_id not in (None, principal.booking_id):
             raise HTTPException(403, "Not your booking")
         booking_id = principal.booking_id

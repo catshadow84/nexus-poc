@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from .booking_service import CHECKED_IN, get_booking
 from .db import get_session
-from .models import AccessToken, Booking
+from .models import AccessToken, Booking, StaffToken, StaffUser
 from .timeutil import utcnow
 
 TOKEN_LIFETIME = timedelta(days=30)
@@ -25,6 +25,8 @@ class Principal:
     is_staff: bool
     booking_id: str | None = None
     guest_id: str | None = None
+    role: str | None = None  # staff only: front_desk, housekeeping, maintenance, manager
+    staff_id: str | None = None  # staff with their own account
 
 
 def auth_disabled() -> bool:
@@ -63,7 +65,20 @@ async def issue_guest_token(session: AsyncSession, booking: Booking) -> str:
 async def principal_from_token(session: AsyncSession, token: str) -> Principal:
     staff_key = os.getenv("STAFF_API_KEY", "")
     if staff_key and secrets.compare_digest(token.encode(), staff_key.encode()):
-        return Principal(is_staff=True)
+        return Principal(is_staff=True, role="manager")  # the old shared key
+
+    staff_row = (
+        await session.execute(
+            select(StaffToken, StaffUser)
+            .join(StaffUser, StaffUser.id == StaffToken.staff_id)
+            .where(StaffToken.token_hash == hash_token(token))
+        )
+    ).first()
+    if staff_row is not None:
+        staff_token, user = staff_row
+        if staff_token.revoked_at is not None or staff_token.expires_at < utcnow() or not user.active:
+            raise _unauthorized("Token expired or revoked")
+        return Principal(is_staff=True, role=user.role, staff_id=user.id)
 
     result = await session.execute(
         select(AccessToken, Booking)
@@ -84,7 +99,7 @@ async def get_principal(
     session: AsyncSession = Depends(get_session),
 ) -> Principal:
     if auth_disabled():
-        return Principal(is_staff=True)
+        return Principal(is_staff=True, role="manager")
     if credentials is None:
         raise _unauthorized("Missing token")
     return await principal_from_token(session, credentials.credentials)
@@ -95,7 +110,7 @@ async def optional_principal(
     session: AsyncSession = Depends(get_session),
 ) -> Principal | None:
     if auth_disabled():
-        return Principal(is_staff=True)
+        return Principal(is_staff=True, role="manager")
     if credentials is None:
         return None
     try:
@@ -110,6 +125,22 @@ async def require_staff(principal: Principal = Depends(get_principal)) -> Princi
     return principal
 
 
+def has_role(principal: Principal, *roles: str) -> bool:
+    """True for staff with one of these roles. Managers pass every check."""
+    return principal.is_staff and (principal.role == "manager" or principal.role in roles)
+
+
+def require_role(*roles: str):
+    """Staff with one of these roles. Managers can always do everything."""
+
+    async def dependency(principal: Principal = Depends(require_staff)) -> Principal:
+        if not has_role(principal, *roles):
+            raise HTTPException(403, "Your role cannot do this")
+        return principal
+
+    return dependency
+
+
 async def owned_booking(
     booking_id: str,
     principal: Principal = Depends(get_principal),
@@ -117,7 +148,7 @@ async def owned_booking(
 ) -> Booking:
     """The booking, if the caller may see it. Anything else is a plain 404."""
     booking = await get_booking(session, booking_id)
-    if booking is None or not (principal.is_staff or principal.booking_id == booking.id):
+    if booking is None or not (has_role(principal, "front_desk") or principal.booking_id == booking.id):
         raise HTTPException(404, "booking not found")
     return booking
 
@@ -126,7 +157,8 @@ async def can_access_room(
     session: AsyncSession, principal: Principal, room_id: str
 ) -> bool:
     if principal.is_staff:
-        return True
+        # Housekeeping does not control devices.
+        return has_role(principal, "front_desk", "maintenance")
     if not principal.booking_id:
         return False
     booking = await get_booking(session, principal.booking_id)
