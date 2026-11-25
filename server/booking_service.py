@@ -7,6 +7,7 @@ from .state import get_store
 from .devices import get_registry
 from .mqtt_bus import bus
 from .broadcast import broadcaster
+from .ops import mark_room_dirty
 from .timeutil import utcnow
 
 log = logging.getLogger("booking")
@@ -114,5 +115,6 @@ async def check_out(session: AsyncSession, booking: Booking) -> dict:
     booking.status = CHECKED_OUT
     booking.actual_check_out = utcnow()
     await _reset_room(booking.room_id)
+    await mark_room_dirty(session, booking.room_id)
     await session.commit()
     return {"reset": True}
