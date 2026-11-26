@@ -3,10 +3,10 @@ import {
   Text, View, StyleSheet, Pressable, ScrollView, Alert,
 } from 'react-native';
 import Slider from '@react-native-community/slider';
-import { router, useFocusEffect } from 'expo-router';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { WS_URL } from '@/config';
 import { api } from '@/lib/api';
-import { clearToken, getToken, getTrip } from '@/lib/session';
+import { clearToken, getStaff, getToken, getTrip } from '@/lib/session';
 
 
 async function doCheckout(bookingId: string, onSuccess: (id: string) => void) {
@@ -32,6 +32,7 @@ type RoomState = {
 };
 
 export default function HomeScreen() {
+  const { controls } = useLocalSearchParams<{ controls?: string }>();
   const [isGuest, setIsGuest] = useState(false);
   const [guestName, setGuestName] = useState<string | null>(null);
   const [state, setState] = useState<RoomState | null>(null);
@@ -77,6 +78,11 @@ export default function HomeScreen() {
        const token = await getToken();
        if (!token) {
          router.replace('/search');
+         return;
+       }
+       const staffSession = await getStaff();
+       if (staffSession && !controls) {
+         router.replace('/staff-home');
          return;
        }
        const trip = await getTrip();
@@ -265,7 +271,7 @@ export default function HomeScreen() {
         </View>
       )}
       {!isGuest && (
-        <Pressable style={styles.checkoutBtn} onPress={() => router.push('/staff')}>
+        <Pressable style={styles.checkoutBtn} onPress={async () => router.push((await getStaff()) ? '/staff-home' : '/staff')}>
           <Text style={styles.checkoutText}>Staff desk</Text>
         </Pressable>
       )}      
