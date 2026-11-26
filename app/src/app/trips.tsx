@@ -1,8 +1,19 @@
 import { useCallback, useState } from 'react';
-import { Text, View, Pressable, ScrollView, StyleSheet, Alert, ActivityIndicator } from 'react-native';
+import { ActivityIndicator, Alert, Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { api } from '@/lib/api';
+import { light } from '@/lib/brand';
+import { nightsBetween, prettyDate } from '@/lib/dates';
+import { heroPhoto } from '@/lib/rooms';
 import { clearToken, getTrip } from '@/lib/session';
+import {
+  GBanner,
+  GCard,
+  GhostButton,
+  GScreen,
+  PrimaryButton,
+  TopBar,
+} from '@/components/guest-ui';
 
 type Booking = {
   id: string;
@@ -13,12 +24,27 @@ type Booking = {
   apaleo_reservation_id: string | null;
 };
 
-const LABELS: Record<string, string> = {
-  RESERVED: 'Reserved. Check in when you arrive.',
-  CHECKED_IN: 'Checked in',
-  CHECKED_OUT: 'Stay completed',
-  CANCELED: 'Canceled',
-  NO_SHOW: 'Marked as no-show',
+const STATUS: Record<string, { label: string; hint: string; color: string; bg: string }> = {
+  RESERVED: {
+    label: 'Reserved',
+    hint: 'Check in when you arrive.',
+    color: '#9A5B00',
+    bg: '#FFF1D9',
+  },
+  CHECKED_IN: {
+    label: 'Checked in',
+    hint: 'Your room is ready. Enjoy your stay.',
+    color: light.ok,
+    bg: '#DDF3EA',
+  },
+  CHECKED_OUT: {
+    label: 'Stay completed',
+    hint: 'Thank you for staying with us.',
+    color: light.muted,
+    bg: light.soft,
+  },
+  CANCELED: { label: 'Canceled', hint: 'This reservation was canceled.', color: light.danger, bg: light.dangerSoft },
+  NO_SHOW: { label: 'No-show', hint: 'This reservation was marked as a no-show.', color: light.danger, bg: light.dangerSoft },
 };
 
 export default function TripsScreen() {
@@ -57,11 +83,12 @@ export default function TripsScreen() {
   async function checkIn() {
     if (!booking) return;
     setBusy(true);
+    setError(null);
     try {
       await api(`/bookings/${booking.id}/checkin`, { method: 'POST' });
       router.replace('/');
     } catch (e: any) {
-      Alert.alert('Check-in failed', e.message ?? 'Something went wrong');
+      setError(e.message ?? 'Check-in failed. Please try again.');
     } finally {
       setBusy(false);
     }
@@ -81,11 +108,12 @@ export default function TripsScreen() {
   async function doCancel() {
     if (!booking) return;
     setBusy(true);
+    setError(null);
     try {
       await api(`/bookings/${booking.id}/cancel`, { method: 'POST' });
       await load();
     } catch (e: any) {
-      Alert.alert('Could not cancel', e.message ?? 'Something went wrong');
+      setError(e.message ?? 'Could not cancel. Please try again.');
     } finally {
       setBusy(false);
     }
@@ -96,76 +124,94 @@ export default function TripsScreen() {
     router.replace('/search');
   }
 
+  const arrive = booking?.planned_check_in?.slice(0, 10);
+  const depart = booking?.planned_check_out?.slice(0, 10);
+  const nights = arrive && depart ? nightsBetween(arrive, depart) : null;
+  const status = booking ? (STATUS[booking.status] ?? { label: booking.status, hint: '', color: light.muted, bg: light.soft }) : null;
+
   return (
-    <ScrollView style={styles.scroll} contentContainerStyle={styles.inner}>
-      <Text style={styles.brand}>NEXUS</Text>
-      <Text style={styles.subtitle}>MY TRIP</Text>
+    <GScreen>
+      <TopBar />
+      <Text style={styles.title}>My trip</Text>
 
-      {loading && <ActivityIndicator />}
-      {error && <Text style={styles.err}>{error}</Text>}
+      {loading && !booking && <ActivityIndicator style={{ marginTop: 32 }} color={light.navy} />}
+      {error && <GBanner text={error} />}
 
-      {booking && (
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>{LABELS[booking.status] ?? booking.status}</Text>
-          <Text style={styles.muted}>
-            {booking.planned_check_in?.slice(0, 10)} → {booking.planned_check_out?.slice(0, 10)}
-          </Text>
-          <Text style={styles.muted}>Room: {booking.room_id}</Text>
-          {booking.apaleo_reservation_id && (
-            <Text style={styles.muted}>Reservation {booking.apaleo_reservation_id}</Text>
-          )}
+      {booking && status && (
+        <GCard style={{ padding: 0 }}>
+          <Image source={heroPhoto} style={styles.photo} resizeMode="cover" />
+          <View style={{ padding: 16 }}>
+            <View style={[styles.chip, { backgroundColor: status.bg }]}>
+              <Text style={[styles.chipText, { color: status.color }]}>{status.label}</Text>
+            </View>
+            {status.hint ? <Text style={styles.hint}>{status.hint}</Text> : null}
 
-          {booking.status === 'RESERVED' && (
-            <Pressable style={[styles.btn, busy && { opacity: 0.5 }]} onPress={checkIn} disabled={busy}>
-              <Text style={styles.btnText}>{busy ? 'Checking in…' : 'Check in'}</Text>
-            </Pressable>
-          )}
-  {booking.status === 'RESERVED' && (
-    <Pressable style={styles.secondary} onPress={confirmCancel} disabled={busy}>
-      <Text style={styles.secondaryText}>Cancel reservation</Text>
-    </Pressable>
-  )}          
-          {booking.status === 'CHECKED_IN' && (
-            <Pressable style={styles.btn} onPress={() => router.replace('/')}>
-              <Text style={styles.btnText}>Open my room</Text>
-            </Pressable>
-          )}
-          {booking.status === 'CHECKED_OUT' && (
-            <Pressable style={styles.btn} onPress={() => router.push(`/summary?booking_id=${booking.id}`)}>
-              <Text style={styles.btnText}>View receipt</Text>
-            </Pressable>
-          )}
-        </View>
+            <View style={styles.divider} />
+            {arrive && <Row label="Arrive" value={prettyDate(arrive)} />}
+            {depart && <Row label="Depart" value={prettyDate(depart)} />}
+            {nights != null && <Row label="Nights" value={String(nights)} />}
+            <Row label="Room" value={booking.room_id.replace(/^room\s*/i, 'Room ')} />
+            {booking.apaleo_reservation_id && (
+              <Row label="Reservation" value={booking.apaleo_reservation_id} />
+            )}
+
+            <View style={{ marginTop: 16, gap: 10 }}>
+              {booking.status === 'RESERVED' && (
+                <>
+                  <PrimaryButton
+                    label={busy ? 'Checking in…' : 'Check in'}
+                    onPress={checkIn}
+                    disabled={busy}
+                  />
+                  <GhostButton label="Cancel reservation" onPress={confirmCancel} />
+                </>
+              )}
+              {booking.status === 'CHECKED_IN' && (
+                <PrimaryButton label="Open my room" onPress={() => router.replace('/')} />
+              )}
+              {booking.status === 'CHECKED_OUT' && (
+                <PrimaryButton
+                  label="View receipt"
+                  onPress={() => router.push(`/summary?booking_id=${booking.id}`)}
+                />
+              )}
+            </View>
+          </View>
+        </GCard>
       )}
 
-      <Pressable style={styles.secondary} onPress={load}>
-        <Text style={styles.secondaryText}>Refresh</Text>
+      <View style={{ marginTop: 18, gap: 10 }}>
+        <GhostButton label="Book another stay" onPress={() => router.push('/search')} />
+        <GhostButton label="Profile" onPress={() => router.push('/profile')} />
+        <GhostButton label="Refresh" onPress={load} />
+      </View>
+
+      <Pressable onPress={signOut} accessibilityRole="button" style={styles.signOut}>
+        <Text style={styles.signOutText}>Sign out</Text>
       </Pressable>
-      <Pressable style={styles.secondary} onPress={() => router.push('/search')}>
-        <Text style={styles.secondaryText}>Book another stay</Text>
-      </Pressable>
-      <Pressable style={styles.secondary} onPress={() => router.push('/profile')}>
-        <Text style={styles.secondaryText}>Profile</Text>
-      </Pressable>      
-      <Pressable onPress={signOut} style={{ marginTop: 24 }}>
-        <Text style={styles.link}>Sign out</Text>
-      </Pressable>
-    </ScrollView>
+    </GScreen>
+  );
+}
+
+function Row({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={styles.row}>
+      <Text style={styles.rowLabel}>{label}</Text>
+      <Text style={styles.rowValue}>{value}</Text>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  scroll: { flex: 1, backgroundColor: '#0a0a0a' },
-  inner: { padding: 24, paddingTop: 72, paddingBottom: 64 },
-  brand: { color: '#fff', fontSize: 36, fontWeight: 'bold', letterSpacing: 8 },
-  subtitle: { color: '#888', marginTop: 8, marginBottom: 24, letterSpacing: 2 },
-  card: { backgroundColor: '#141414', borderRadius: 14, padding: 16, marginBottom: 16 },
-  cardTitle: { color: '#fff', fontSize: 18, fontWeight: '600' },
-  muted: { color: '#888', marginTop: 4 },
-  err: { color: '#f87171', marginVertical: 12 },
-  btn: { backgroundColor: '#fff', borderRadius: 10, padding: 14, alignItems: 'center', marginTop: 16 },
-  btnText: { color: '#000', fontWeight: '600', letterSpacing: 1 },
-  secondary: { borderWidth: 1, borderColor: '#333', borderRadius: 10, padding: 14, alignItems: 'center', marginTop: 12 },
-  secondaryText: { color: '#fff', letterSpacing: 1 },
-  link: { color: '#8a94a3', textAlign: 'center', letterSpacing: 1 },
+  title: { color: light.ink, fontSize: 30, fontWeight: '800' },
+  photo: { width: '100%', height: 160 },
+  chip: { alignSelf: 'flex-start', borderRadius: 999, paddingVertical: 5, paddingHorizontal: 12 },
+  chipText: { fontSize: 13, fontWeight: '800' },
+  hint: { color: light.muted, fontSize: 15, marginTop: 10, lineHeight: 22 },
+  divider: { height: 1, backgroundColor: light.line, marginVertical: 14 },
+  row: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 5, gap: 12 },
+  rowLabel: { color: light.muted, fontSize: 15 },
+  rowValue: { color: light.ink, fontSize: 15, fontWeight: '600', flexShrink: 1, textAlign: 'right' },
+  signOut: { alignSelf: 'center', paddingVertical: 20, paddingHorizontal: 20 },
+  signOutText: { color: light.muted, fontSize: 15, fontWeight: '600' },
 });

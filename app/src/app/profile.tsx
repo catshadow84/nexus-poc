@@ -1,14 +1,24 @@
 import { useEffect, useState } from 'react';
-import { Text, View, TextInput, Pressable, StyleSheet, Alert } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { api } from '@/lib/api';
+import { light } from '@/lib/brand';
 import { getTrip } from '@/lib/session';
+import {
+  GBanner,
+  GCard,
+  GField,
+  GScreen,
+  PrimaryButton,
+  TopBar,
+} from '@/components/guest-ui';
 
 export default function ProfileScreen() {
   const [guestId, setGuestId] = useState<string | null>(null);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -23,13 +33,18 @@ export default function ProfileScreen() {
         setName(g.name);
         setEmail(g.email);
       } catch (e: any) {
-        Alert.alert('Could not load your profile', e.message);
+        setError(e.message ?? 'Could not load your profile');
       }
     })();
   }, []);
 
   async function save() {
-    if (!guestId || !name.trim()) return;
+    if (!guestId) return;
+    if (!name.trim()) {
+      setError('Please enter your name.');
+      return;
+    }
+    setError(null);
     try {
       const g = await api<{ name: string }>(`/guests/${guestId}`, {
         method: 'PATCH',
@@ -38,50 +53,53 @@ export default function ProfileScreen() {
       setName(g.name);
       setSaved(true);
     } catch (e: any) {
-      Alert.alert('Could not save', e.message ?? 'Something went wrong');
+      setError(e.message ?? 'Could not save. Please try again.');
     }
   }
 
   return (
-    <View style={styles.root}>
-      <Text style={styles.brand}>NEXUS</Text>
-      <Text style={styles.subtitle}>PROFILE</Text>
+    <GScreen>
+      <TopBar onBack={() => router.back()} />
+      <Text style={styles.title}>Profile</Text>
 
-      <Text style={styles.label}>Name</Text>
-      <TextInput
-        style={styles.input}
-        value={name}
-        onChangeText={(t) => {
-          setName(t);
-          setSaved(false);
-        }}
-        autoCapitalize="words"
-      />
-      <Text style={styles.label}>Email</Text>
-      <Text style={styles.readonly}>{email}</Text>
+      <GCard>
+        <GField
+          label="Full name"
+          value={name}
+          onChangeText={(t) => {
+            setName(t);
+            setSaved(false);
+          }}
+          autoCapitalize="words"
+          autoComplete="name"
+        />
+        <View style={{ marginTop: 14 }}>
+          <Text style={styles.label}>Email</Text>
+          <Text style={styles.readonly}>{email || '—'}</Text>
+        </View>
+      </GCard>
 
-      <Pressable style={styles.btn} onPress={save}>
-        <Text style={styles.btnText}>Save</Text>
-      </Pressable>
+      {error && <GBanner text={error} />}
       {saved && <Text style={styles.ok}>Saved.</Text>}
 
-      <Pressable style={styles.secondary} onPress={() => router.back()}>
-        <Text style={styles.secondaryText}>Back</Text>
-      </Pressable>
-    </View>
+      <View style={{ marginTop: 18 }}>
+        <PrimaryButton label="Save" onPress={save} />
+      </View>
+    </GScreen>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#0a0a0a', padding: 24, paddingTop: 72 },
-  brand: { color: '#fff', fontSize: 36, fontWeight: 'bold', letterSpacing: 8 },
-  subtitle: { color: '#888', marginTop: 8, marginBottom: 24, letterSpacing: 2 },
-  label: { color: '#666', fontSize: 12, letterSpacing: 1, marginBottom: 4 },
-  input: { backgroundColor: '#141414', color: '#fff', borderRadius: 10, padding: 14, marginBottom: 16 },
-  readonly: { color: '#888', padding: 14, backgroundColor: '#101010', borderRadius: 10, marginBottom: 16 },
-  btn: { backgroundColor: '#fff', borderRadius: 10, padding: 14, alignItems: 'center', marginTop: 8 },
-  btnText: { color: '#000', fontWeight: '600', letterSpacing: 1 },
-  ok: { color: '#4ade80', marginTop: 12 },
-  secondary: { borderWidth: 1, borderColor: '#333', borderRadius: 10, padding: 14, alignItems: 'center', marginTop: 20 },
-  secondaryText: { color: '#fff', letterSpacing: 1 },
+  title: { color: light.ink, fontSize: 30, fontWeight: '800' },
+  label: { color: light.muted, fontSize: 13, fontWeight: '600', marginBottom: 6 },
+  readonly: {
+    color: light.muted,
+    backgroundColor: light.soft,
+    borderRadius: 12,
+    paddingVertical: 13,
+    paddingHorizontal: 14,
+    fontSize: 16,
+    overflow: 'hidden',
+  },
+  ok: { color: light.ok, fontWeight: '700', marginTop: 14 },
 });
