@@ -220,7 +220,7 @@ export default function SearchScreen() {
                       <View style={{ flex: 1 }}>
                         <Text style={styles.rateName}>{o.rate_plan ?? 'Standard rate'}</Text>
                         {!o.bookable && (
-                          <Text style={styles.rateNote}>Needs payment, not available in the demo</Text>
+                          <Text style={styles.rateNote}>Needs a card. Real payments come later.</Text>
                         )}
                       </View>
                       <View style={{ alignItems: 'flex-end' }}>
@@ -251,7 +251,7 @@ export default function SearchScreen() {
 
 const styles = StyleSheet.create({
   staffLink: { color: light.muted, fontSize: 14, fontWeight: '600' },
-  hero: { height: 200, borderRadius: 20, overflow: 'hidden', justifyContent: 'flex-end' },
+  hero: { height: 220, borderRadius: 20, overflow: 'hidden', justifyContent: 'flex-end' },
   heroText: { padding: 18 },
   heroTitle: { color: '#fff', fontSize: 30, fontWeight: '800' },
   heroSub: { color: '#E6EEF5', fontSize: 15, marginTop: 4 },

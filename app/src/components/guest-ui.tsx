@@ -8,6 +8,7 @@ import {
   TextInputProps,
   View,
 } from 'react-native';
+import { StatusBar } from 'expo-status-bar';
 import { light } from '@/lib/brand';
 import { MONTHS, nightsBetween, toIso } from '@/lib/dates';
 
@@ -15,6 +16,7 @@ import { MONTHS, nightsBetween, toIso } from '@/lib/dates';
 export function GScreen({ children }: { children: ReactNode }) {
   return (
     <View style={s.root}>
+      <StatusBar style="dark" />
       <ScrollView contentContainerStyle={s.content} keyboardShouldPersistTaps="handled">
         {children}
       </ScrollView>

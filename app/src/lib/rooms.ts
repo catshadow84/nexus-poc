@@ -9,7 +9,8 @@ const PHOTOS: ImageSourcePropType[] = [
 ];
 
 export const allPhotos = PHOTOS;
-export const heroPhoto: ImageSourcePropType = PHOTOS[2];
+// A wide crop of the best room photo, made for the search screen header.
+export const heroPhoto: ImageSourcePropType = require('@/assets/rooms/hero.jpg');
 
 /** The same room type always gets the same photo. */
 export function roomPhoto(roomType: string | null | undefined): ImageSourcePropType {
