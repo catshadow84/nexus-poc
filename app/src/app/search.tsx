@@ -1,9 +1,20 @@
-import { useState } from 'react';
-import {
-  Text, View, TextInput, Pressable, ScrollView, StyleSheet, ActivityIndicator,
-} from 'react-native';
+import { useEffect, useMemo, useState } from 'react';
+import { ActivityIndicator, Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { api } from '@/lib/api';
+import { light } from '@/lib/brand';
+import { addDays, money, nightsBetween, prettyDate, toIso } from '@/lib/dates';
+import { heroPhoto, roomPhoto } from '@/lib/rooms';
+import { hasSeenWelcome } from '@/lib/session';
+import {
+  Calendar,
+  GBanner,
+  GCard,
+  GScreen,
+  PrimaryButton,
+  Stepper,
+  TopBar,
+} from '@/components/guest-ui';
 
 type Offer = {
   rate_plan_id: string;
@@ -16,74 +27,84 @@ type Offer = {
   bookable: boolean;
 };
 
-const pad = (n: number) => String(n).padStart(2, '0');
-const toIso = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-function addDays(iso: string, n: number) {
-  const [y, m, d] = iso.split('-').map(Number);
-  return toIso(new Date(y, m - 1, d + n));
-}
-function validIso(s: string) {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
-  const [y, m, d] = s.split('-').map(Number);
-  const dt = new Date(y, m - 1, d);
-  return dt.getFullYear() === y && dt.getMonth() === m - 1 && dt.getDate() === d;
-}
-
-function Stepper(props: { label: string; value: number; min: number; max: number; onChange: (n: number) => void }) {
-  return (
-    <View style={styles.stepRow}>
-      <Text style={styles.label}>{props.label}</Text>
-      <View style={styles.stepBox}>
-        <Pressable style={styles.stepBtn} onPress={() => props.onChange(Math.max(props.min, props.value - 1))}>
-          <Text style={styles.stepText}>−</Text>
-        </Pressable>
-        <Text style={styles.stepValue}>{props.value}</Text>
-        <Pressable style={styles.stepBtn} onPress={() => props.onChange(Math.min(props.max, props.value + 1))}>
-          <Text style={styles.stepText}>+</Text>
-        </Pressable>
-      </View>
-    </View>
-  );
-}
+type Group = { roomType: string; offers: Offer[] };
 
 export default function SearchScreen() {
-  const [arrival, setArrival] = useState(addDays(toIso(new Date()), 30));
-  const [nights, setNights] = useState(2);
+  const [start, setStart] = useState<string | null>(addDays(toIso(new Date()), 30));
+  const [end, setEnd] = useState<string | null>(addDays(toIso(new Date()), 32));
   const [adults, setAdults] = useState(2);
+  const [calendarOpen, setCalendarOpen] = useState(false);
   const [offers, setOffers] = useState<Offer[] | null>(null);
+  const [searchedNights, setSearchedNights] = useState(0);
+  const [searchedAdults, setSearchedAdults] = useState(2);
+  const [picked, setPicked] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const departure = validIso(arrival) ? addDays(arrival, nights) : '';
+  // First time on this device: show the three intro slides.
+  useEffect(() => {
+    hasSeenWelcome().then((seen) => {
+      if (!seen) router.replace('/welcome');
+    });
+  }, []);
+
+  const nights = start && end ? nightsBetween(start, end) : 0;
+
+  const groups: Group[] = useMemo(() => {
+    const map = new Map<string, Offer[]>();
+    for (const o of offers ?? []) {
+      const key = o.room_type ?? 'Room';
+      map.set(key, [...(map.get(key) ?? []), o]);
+    }
+    const list = [...map.entries()].map(([roomType, items]) => ({
+      roomType,
+      offers: [...items].sort((a, b) => a.total_amount - b.total_amount),
+    }));
+    return list.sort((a, b) => a.offers[0].total_amount - b.offers[0].total_amount);
+  }, [offers]);
+
+  function changeDates(newStart: string | null, newEnd: string | null) {
+    setStart(newStart);
+    setEnd(newEnd);
+    if (newStart && newEnd) setCalendarOpen(false);
+  }
 
   async function search() {
+    if (!start || !end) return;
     setError(null);
     setOffers(null);
-    if (!validIso(arrival)) {
-      setError('Use the date format YYYY-MM-DD, for example 2026-12-20.');
-      return;
-    }
+    setPicked({});
     setLoading(true);
     try {
-      const data = await api<Offer[]>(
-        `/offers?arrival=${arrival}&departure=${departure}&adults=${adults}`,
-      );
+      const data = await api<Offer[]>(`/offers?arrival=${start}&departure=${end}&adults=${adults}`);
+      setSearchedNights(nights);
+      setSearchedAdults(adults);
       setOffers(data);
     } catch (e: any) {
-      setError(e.message ?? 'Search failed');
+      setError(e.message ?? 'Search failed. Is the server running?');
     } finally {
       setLoading(false);
     }
   }
 
-  function select(o: Offer) {
+  function chosenOffer(group: Group): Offer {
+    const id = picked[group.roomType];
+    return (
+      group.offers.find((o) => o.rate_plan_id === id) ??
+      group.offers.find((o) => o.bookable) ??
+      group.offers[0]
+    );
+  }
+
+  function reserve(o: Offer) {
+    if (!start || !end) return;
     router.push({
       pathname: '/reserve',
       params: {
-        arrival,
-        departure,
-        nights: String(nights),
-        adults: String(adults),
+        arrival: start,
+        departure: end,
+        nights: String(searchedNights),
+        adults: String(searchedAdults),
         rate_plan_id: o.rate_plan_id,
         room_type: o.room_type ?? 'Room',
         rate_plan: o.rate_plan ?? '',
@@ -93,79 +114,180 @@ export default function SearchScreen() {
     });
   }
 
+  const whenLabel =
+    start && end
+      ? `${prettyDate(start)}  →  ${prettyDate(end)}  ·  ${nights} night${nights === 1 ? '' : 's'}`
+      : start
+        ? `${prettyDate(start)}  →  pick your departure`
+        : 'Pick your arrival date';
+
   return (
-    <ScrollView style={styles.scroll} contentContainerStyle={styles.inner}>
-      <Text style={styles.brand}>NEXUS</Text>
-      <Text style={styles.subtitle}>FIND A ROOM</Text>
-
-      <Text style={styles.label}>Arrival (YYYY-MM-DD)</Text>
-      <TextInput
-        style={styles.input}
-        value={arrival}
-        onChangeText={setArrival}
-        autoCapitalize="none"
-        autoCorrect={false}
-        keyboardType="numbers-and-punctuation"
+    <GScreen>
+      <TopBar
+        right={
+          <Pressable onPress={() => router.push('/signin')} accessibilityRole="button">
+            <Text style={styles.staffLink}>Staff sign in</Text>
+          </Pressable>
+        }
       />
-      <Stepper label="Nights" value={nights} min={1} max={14} onChange={setNights} />
-      <Stepper label="Adults" value={adults} min={1} max={6} onChange={setAdults} />
-      {departure ? <Text style={styles.muted}>Departure {departure}</Text> : null}
 
-      <Pressable style={[styles.btn, loading && { opacity: 0.5 }]} onPress={search} disabled={loading}>
-        <Text style={styles.btnText}>{loading ? 'Searching…' : 'Search'}</Text>
-      </Pressable>
-
-      {loading && <ActivityIndicator style={{ marginTop: 16 }} />}
-      {error && <Text style={styles.err}>{error}</Text>}
-      {offers && offers.length === 0 && <Text style={styles.muted}>No rooms available for these dates.</Text>}
-
-      {offers?.map((o) => (
-        <View key={o.rate_plan_id} style={styles.card}>
-          <Text style={styles.cardTitle}>{o.room_type ?? 'Room'}</Text>
-          <Text style={styles.muted}>{o.rate_plan ?? ''}</Text>
-          <Text style={styles.price}>
-            {o.total_amount.toFixed(2)} {o.currency}
-            <Text style={styles.muted}> for {nights} night{nights === 1 ? '' : 's'}</Text>
-          </Text>
-          {o.available_units != null && (
-            <Text style={styles.muted}>{o.available_units} left</Text>
-          )}
-          {o.bookable ? (
-            <Pressable style={styles.btn} onPress={() => select(o)}>
-              <Text style={styles.btnText}>Select</Text>
-            </Pressable>
-          ) : (
-            <Text style={styles.disabled}>Needs payment — not available in the demo</Text>
-          )}
+      <View style={styles.hero}>
+        <Image source={heroPhoto} style={StyleSheet.absoluteFill} resizeMode="cover" />
+        <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(15,35,56,0.5)' }]} />
+        <View style={styles.heroText}>
+          <Text style={styles.heroTitle}>Book. Unlock. Stay.</Text>
+          <Text style={styles.heroSub}>Your room and your keys, all in one app.</Text>
         </View>
-      ))}
+      </View>
 
-      <Pressable onPress={() => router.push('/signin')} style={{ marginTop: 32 }}>
-        <Text style={styles.link}>Staff sign-in</Text>
-      </Pressable>
-    </ScrollView>
+      <GCard>
+        <Pressable
+          onPress={() => setCalendarOpen(!calendarOpen)}
+          accessibilityRole="button"
+          style={styles.whenRow}
+        >
+          <View style={{ flex: 1 }}>
+            <Text style={styles.small}>WHEN</Text>
+            <Text style={styles.when}>{whenLabel}</Text>
+          </View>
+          <Text style={styles.caret}>{calendarOpen ? '▴' : '▾'}</Text>
+        </Pressable>
+
+        {calendarOpen && (
+          <View style={{ marginTop: 8 }}>
+            <Calendar start={start} end={end} onChange={changeDates} />
+            <Text style={styles.hint}>Tap your arrival day, then your departure day. Up to 14 nights.</Text>
+          </View>
+        )}
+
+        <View style={styles.divider} />
+        <Stepper label="Adults" value={adults} min={1} max={6} onChange={setAdults} />
+
+        <View style={{ marginTop: 12 }}>
+          <PrimaryButton
+            label={loading ? 'Searching…' : 'Check availability'}
+            onPress={search}
+            disabled={loading || !start || !end}
+          />
+        </View>
+      </GCard>
+
+      {loading && <ActivityIndicator style={{ marginTop: 24 }} color={light.navy} />}
+      {error && <GBanner text={error} />}
+      {offers && offers.length === 0 && (
+        <GBanner tone="info" text="No rooms are available for these dates. Try different dates." />
+      )}
+
+      {groups.length > 0 && (
+        <Text style={styles.resultsTitle}>
+          {groups.length} room type{groups.length === 1 ? '' : 's'} · {searchedNights} night
+          {searchedNights === 1 ? '' : 's'} · {searchedAdults} adult{searchedAdults === 1 ? '' : 's'}
+        </Text>
+      )}
+
+      {groups.map((group) => {
+        const chosen = chosenOffer(group);
+        const units = group.offers
+          .map((o) => o.available_units)
+          .filter((n): n is number => n != null);
+        const left = units.length ? Math.min(...units) : null;
+        return (
+          <GCard key={group.roomType} style={{ padding: 0 }}>
+            <Image source={roomPhoto(group.roomType)} style={styles.roomPhoto} resizeMode="cover" />
+            <View style={{ padding: 16 }}>
+              <Text style={styles.roomTitle}>{group.roomType}</Text>
+              {left != null && left <= 3 && (
+                <Text style={styles.scarce}>
+                  {left === 1 ? 'Only 1 left' : `Only ${left} left`}
+                </Text>
+              )}
+
+              <View style={{ marginTop: 10, gap: 8 }}>
+                {group.offers.map((o) => {
+                  const on = o.rate_plan_id === chosen.rate_plan_id;
+                  return (
+                    <Pressable
+                      key={o.rate_plan_id}
+                      disabled={!o.bookable}
+                      onPress={() => setPicked({ ...picked, [group.roomType]: o.rate_plan_id })}
+                      accessibilityRole="radio"
+                      accessibilityState={{ selected: on }}
+                      style={[styles.rate, on && styles.rateOn, !o.bookable && { opacity: 0.5 }]}
+                    >
+                      <View style={[styles.radio, on && styles.radioOn]}>
+                        {on && <View style={styles.radioDot} />}
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.rateName}>{o.rate_plan ?? 'Standard rate'}</Text>
+                        {!o.bookable && (
+                          <Text style={styles.rateNote}>Needs payment, not available in the demo</Text>
+                        )}
+                      </View>
+                      <View style={{ alignItems: 'flex-end' }}>
+                        <Text style={styles.rateTotal}>{money(o.total_amount, o.currency)}</Text>
+                        <Text style={styles.rateNote}>
+                          {money(o.total_amount / Math.max(searchedNights, 1), o.currency)} / night
+                        </Text>
+                      </View>
+                    </Pressable>
+                  );
+                })}
+              </View>
+
+              <View style={{ marginTop: 14 }}>
+                <PrimaryButton
+                  label={`Reserve · ${money(chosen.total_amount, chosen.currency)}`}
+                  onPress={() => reserve(chosen)}
+                  disabled={!chosen.bookable}
+                />
+              </View>
+            </View>
+          </GCard>
+        );
+      })}
+    </GScreen>
   );
 }
 
 const styles = StyleSheet.create({
-  scroll: { flex: 1, backgroundColor: '#0a0a0a' },
-  inner: { padding: 24, paddingTop: 72, paddingBottom: 64 },
-  brand: { color: '#fff', fontSize: 36, fontWeight: 'bold', letterSpacing: 8 },
-  subtitle: { color: '#888', marginTop: 8, marginBottom: 24, letterSpacing: 2 },
-  label: { color: '#666', fontSize: 12, letterSpacing: 1, marginBottom: 4 },
-  input: { backgroundColor: '#141414', color: '#fff', borderRadius: 10, padding: 14, marginBottom: 12 },
-  stepRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  stepBox: { flexDirection: 'row', alignItems: 'center', gap: 16 },
-  stepBtn: { backgroundColor: '#141414', borderRadius: 8, width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-  stepText: { color: '#fff', fontSize: 20 },
-  stepValue: { color: '#fff', fontSize: 18, minWidth: 24, textAlign: 'center' },
-  btn: { backgroundColor: '#fff', borderRadius: 10, padding: 14, alignItems: 'center', marginTop: 16 },
-  btnText: { color: '#000', fontWeight: '600', letterSpacing: 1 },
-  muted: { color: '#888', marginTop: 4 },
-  err: { color: '#f87171', marginTop: 16 },
-  card: { backgroundColor: '#141414', borderRadius: 14, padding: 16, marginTop: 16 },
-  cardTitle: { color: '#fff', fontSize: 18, fontWeight: '600' },
-  price: { color: '#fff', fontSize: 20, marginTop: 8 },
-  disabled: { color: '#666', marginTop: 16 },
-  link: { color: '#8a94a3', textAlign: 'center', letterSpacing: 1 },
+  staffLink: { color: light.muted, fontSize: 14, fontWeight: '600' },
+  hero: { height: 200, borderRadius: 20, overflow: 'hidden', justifyContent: 'flex-end' },
+  heroText: { padding: 18 },
+  heroTitle: { color: '#fff', fontSize: 30, fontWeight: '800' },
+  heroSub: { color: '#E6EEF5', fontSize: 15, marginTop: 4 },
+  whenRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 4 },
+  small: { color: light.muted, fontSize: 11, fontWeight: '700', letterSpacing: 1 },
+  when: { color: light.ink, fontSize: 16, fontWeight: '700', marginTop: 4 },
+  caret: { color: light.navy, fontSize: 18, paddingLeft: 12 },
+  hint: { color: light.muted, fontSize: 13, marginTop: 8 },
+  divider: { height: 1, backgroundColor: light.line, marginVertical: 12 },
+  resultsTitle: { color: light.muted, fontSize: 14, fontWeight: '600', marginTop: 22 },
+  roomPhoto: { width: '100%', height: 180 },
+  roomTitle: { color: light.ink, fontSize: 20, fontWeight: '800' },
+  scarce: { color: light.danger, fontSize: 13, fontWeight: '700', marginTop: 4 },
+  rate: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    borderWidth: 1,
+    borderColor: light.line,
+    borderRadius: 14,
+    padding: 12,
+    backgroundColor: '#fff',
+  },
+  rateOn: { borderColor: light.navy, backgroundColor: light.soft },
+  radio: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    borderWidth: 2,
+    borderColor: light.line,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  radioOn: { borderColor: light.navy },
+  radioDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: light.navy },
+  rateName: { color: light.ink, fontSize: 15, fontWeight: '700' },
+  rateTotal: { color: light.ink, fontSize: 16, fontWeight: '800' },
+  rateNote: { color: light.muted, fontSize: 12, marginTop: 2 },
 });

@@ -1,29 +1,56 @@
 import { useState } from 'react';
-import { Text, View, TextInput, Pressable, ScrollView, StyleSheet, Alert } from 'react-native';
+import { Image, StyleSheet, Text, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { api } from '@/lib/api';
+import { light } from '@/lib/brand';
+import { money, prettyDate } from '@/lib/dates';
+import { roomPhoto } from '@/lib/rooms';
 import { setToken, setTrip } from '@/lib/session';
+import {
+  GBanner,
+  GCard,
+  GField,
+  GScreen,
+  PrimaryButton,
+  TopBar,
+} from '@/components/guest-ui';
 
 type Created = { id: string; guest_id: string; guest_token: string };
 
 export default function ReserveScreen() {
   const p = useLocalSearchParams<{
-    arrival: string; departure: string; nights: string; adults: string;
-    rate_plan_id: string; room_type: string; rate_plan: string;
-    total: string; currency: string;
+    arrival: string;
+    departure: string;
+    nights: string;
+    adults: string;
+    rate_plan_id: string;
+    room_type: string;
+    rate_plan: string;
+    total: string;
+    currency: string;
   }>();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const nights = Number(p.nights) || 1;
+  const adults = Number(p.adults) || 1;
+  const total = money(Number(p.total), p.currency ?? '');
 
   async function confirm() {
     const cleanName = name.trim();
     const cleanEmail = email.trim().toLowerCase();
-    if (!cleanName || !cleanEmail.includes('@')) {
-      Alert.alert('Details needed', 'Please enter your name and a valid email address.');
+    if (!cleanName) {
+      setError('Please enter your full name.');
+      return;
+    }
+    if (!cleanEmail.includes('@') || !cleanEmail.includes('.')) {
+      setError('Please enter a valid email address.');
       return;
     }
     setBusy(true);
+    setError(null);
     try {
       // Demo payment: always approved, nothing is charged or recorded.
       await new Promise((r) => setTimeout(r, 800));
@@ -39,7 +66,7 @@ export default function ReserveScreen() {
           room_id: 'room1',
           arrival: p.arrival,
           departure: p.departure,
-          adults: Number(p.adults),
+          adults,
           rate_plan_id: p.rate_plan_id,
         },
       });
@@ -47,37 +74,57 @@ export default function ReserveScreen() {
       await setTrip({ bookingId: booking.id, guestId: booking.guest_id });
       router.replace('/trips');
     } catch (e: any) {
-      Alert.alert('Booking failed', e.message ?? 'Something went wrong');
+      setError(e.message ?? 'Something went wrong. Please try again.');
     } finally {
       setBusy(false);
     }
   }
 
   return (
-    <ScrollView style={styles.scroll} contentContainerStyle={styles.inner}>
-      <Text style={styles.brand}>NEXUS</Text>
-      <Text style={styles.subtitle}>CONFIRM YOUR STAY</Text>
+    <GScreen>
+      <TopBar onBack={() => router.back()} />
+      <Text style={styles.title}>Almost there</Text>
+      <Text style={styles.sub}>Check your stay, then tell us who is coming.</Text>
 
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>{p.room_type}</Text>
-        <Text style={styles.muted}>{p.rate_plan}</Text>
-        <Text style={styles.muted}>
-          {p.arrival} → {p.departure} · {p.nights} night{p.nights === '1' ? '' : 's'} · {p.adults} adult{p.adults === '1' ? '' : 's'}
-        </Text>
-        <Text style={styles.price}>{Number(p.total).toFixed(2)} {p.currency}</Text>
-      </View>
+      <GCard style={{ padding: 0 }}>
+        <Image source={roomPhoto(p.room_type)} style={styles.photo} resizeMode="cover" />
+        <View style={{ padding: 16 }}>
+          <Text style={styles.room}>{p.room_type}</Text>
+          {p.rate_plan ? <Text style={styles.muted}>{p.rate_plan}</Text> : null}
 
-      <Text style={styles.label}>Name</Text>
-      <TextInput style={styles.input} value={name} onChangeText={setName} autoCapitalize="words" />
-      <Text style={styles.label}>Email</Text>
-      <TextInput
-        style={styles.input}
-        value={email}
-        onChangeText={setEmail}
-        autoCapitalize="none"
-        autoCorrect={false}
-        keyboardType="email-address"
-      />
+          <View style={styles.divider} />
+          <Row label="Arrive" value={prettyDate(p.arrival)} />
+          <Row label="Depart" value={prettyDate(p.departure)} />
+          <Row label="Guests" value={`${adults} adult${adults === 1 ? '' : 's'}`} />
+
+          <View style={styles.divider} />
+          <Row label={`Room · ${nights} night${nights === 1 ? '' : 's'}`} value={total} />
+          <View style={styles.totalRow}>
+            <Text style={styles.totalLabel}>Total</Text>
+            <Text style={styles.totalValue}>{total}</Text>
+          </View>
+        </View>
+      </GCard>
+
+      <GCard>
+        <Text style={styles.section}>Your details</Text>
+        <GField
+          label="Full name"
+          value={name}
+          onChangeText={setName}
+          autoCapitalize="words"
+          autoComplete="name"
+        />
+        <GField
+          label="Email"
+          value={email}
+          onChangeText={setEmail}
+          autoCapitalize="none"
+          autoCorrect={false}
+          keyboardType="email-address"
+          autoComplete="email"
+        />
+      </GCard>
 
       <View style={styles.demo}>
         <Text style={styles.demoTitle}>Payment · DEMO</Text>
@@ -86,26 +133,58 @@ export default function ReserveScreen() {
         </Text>
       </View>
 
-      <Pressable style={[styles.btn, busy && { opacity: 0.5 }]} onPress={confirm} disabled={busy}>
-        <Text style={styles.btnText}>{busy ? 'Booking…' : 'Confirm & pay (demo)'}</Text>
-      </Pressable>
-    </ScrollView>
+      {error && <GBanner text={error} />}
+
+      <View style={{ marginTop: 18 }}>
+        <PrimaryButton
+          label={busy ? 'Booking…' : `Confirm booking · ${total}`}
+          onPress={confirm}
+          disabled={busy}
+        />
+      </View>
+    </GScreen>
+  );
+}
+
+function Row({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={styles.row}>
+      <Text style={styles.rowLabel}>{label}</Text>
+      <Text style={styles.rowValue}>{value}</Text>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  scroll: { flex: 1, backgroundColor: '#0a0a0a' },
-  inner: { padding: 24, paddingTop: 72, paddingBottom: 64 },
-  brand: { color: '#fff', fontSize: 36, fontWeight: 'bold', letterSpacing: 8 },
-  subtitle: { color: '#888', marginTop: 8, marginBottom: 24, letterSpacing: 2 },
-  card: { backgroundColor: '#141414', borderRadius: 14, padding: 16, marginBottom: 24 },
-  cardTitle: { color: '#fff', fontSize: 18, fontWeight: '600' },
-  price: { color: '#fff', fontSize: 22, marginTop: 12 },
-  muted: { color: '#888', marginTop: 4 },
-  label: { color: '#666', fontSize: 12, letterSpacing: 1, marginBottom: 4 },
-  input: { backgroundColor: '#141414', color: '#fff', borderRadius: 10, padding: 14, marginBottom: 16 },
-  demo: { borderWidth: 1, borderColor: '#333', borderStyle: 'dashed', borderRadius: 12, padding: 14, marginTop: 8 },
-  demoTitle: { color: '#fbbf24', letterSpacing: 1, fontWeight: '600' },
-  btn: { backgroundColor: '#fff', borderRadius: 10, padding: 14, alignItems: 'center', marginTop: 24 },
-  btnText: { color: '#000', fontWeight: '600', letterSpacing: 1 },
+  title: { color: light.ink, fontSize: 28, fontWeight: '800' },
+  sub: { color: light.muted, fontSize: 15, marginTop: 4 },
+  photo: { width: '100%', height: 150 },
+  room: { color: light.ink, fontSize: 20, fontWeight: '800' },
+  muted: { color: light.muted, fontSize: 14, marginTop: 4, lineHeight: 20 },
+  divider: { height: 1, backgroundColor: light.line, marginVertical: 12 },
+  row: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4 },
+  rowLabel: { color: light.muted, fontSize: 15 },
+  rowValue: { color: light.ink, fontSize: 15, fontWeight: '600' },
+  totalRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 8,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: light.line,
+  },
+  totalLabel: { color: light.ink, fontSize: 17, fontWeight: '800' },
+  totalValue: { color: light.ink, fontSize: 20, fontWeight: '800' },
+  section: { color: light.ink, fontSize: 17, fontWeight: '800' },
+  demo: {
+    borderWidth: 1,
+    borderColor: light.amber,
+    borderStyle: 'dashed',
+    borderRadius: 14,
+    padding: 14,
+    marginTop: 14,
+    backgroundColor: '#FFF7EA',
+  },
+  demoTitle: { color: '#9A5B00', fontWeight: '800', letterSpacing: 0.5 },
 });

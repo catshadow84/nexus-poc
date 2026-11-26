@@ -4,6 +4,18 @@ const TOKEN_KEY = 'nexus.token';
 const TRIP_KEY = 'nexus.trip';
 const STAFF_KEY = 'nexus.staff';
 
+// ---------- first-launch intro (kept when signing out) ----------
+
+const WELCOME_KEY = 'nexus.welcome-seen';
+
+export async function hasSeenWelcome(): Promise<boolean> {
+  return (await getItem(WELCOME_KEY)) === '1';
+}
+
+export async function markWelcomeSeen(): Promise<void> {
+  await setItem(WELCOME_KEY, '1');
+}
+
 // ---------- token (guest token, staff session token, or the old shared staff key) ----------
 
 let cachedToken: string | null | undefined; // undefined = not loaded yet
