@@ -132,8 +132,8 @@ export default function SearchScreen() {
       />
 
       <View style={styles.hero}>
-        <Image source={heroPhoto} style={StyleSheet.absoluteFill} resizeMode="cover" />
-        <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(15,35,56,0.5)' }]} />
+        <Image source={heroPhoto} style={styles.heroImage} resizeMode="cover" />
+        <View style={styles.heroShade} />
         <View style={styles.heroText}>
           <Text style={styles.heroTitle}>Book. Unlock. Stay.</Text>
           <Text style={styles.heroSub}>Your room and your keys, all in one app.</Text>
@@ -251,8 +251,17 @@ export default function SearchScreen() {
 
 const styles = StyleSheet.create({
   staffLink: { color: light.muted, fontSize: 14, fontWeight: '600' },
-  hero: { height: 220, borderRadius: 20, overflow: 'hidden', justifyContent: 'flex-end' },
-  heroText: { padding: 18 },
+  hero: { height: 220, borderRadius: 20, overflow: 'hidden' },
+  heroImage: { width: '100%', height: 220 },
+  heroShade: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(15,35,56,0.45)',
+  },
+  heroText: { position: 'absolute', left: 0, right: 0, bottom: 0, padding: 18 },
   heroTitle: { color: '#fff', fontSize: 30, fontWeight: '800' },
   heroSub: { color: '#E6EEF5', fontSize: 15, marginTop: 4 },
   whenRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 4 },
