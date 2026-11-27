@@ -7,6 +7,7 @@ from .state import get_store
 from .devices import get_registry
 from .mqtt_bus import bus
 from .broadcast import broadcaster
+from .door_access import issue_door_pin, revoke_door_pin
 from .ops import mark_room_dirty
 from .timeutil import utcnow
 
@@ -103,9 +104,10 @@ async def check_in(session: AsyncSession, booking: Booking) -> dict:
 
     guest = await get_guest(session, booking.guest_id)
     applied = await _apply_preferences(booking.room_id, guest) if guest else []
+    door = await issue_door_pin(booking)
 
     await session.commit()
-    return {"applied_devices": applied}
+    return {"applied_devices": applied, **door}
 
 
 async def check_out(session: AsyncSession, booking: Booking) -> dict:
@@ -115,6 +117,7 @@ async def check_out(session: AsyncSession, booking: Booking) -> dict:
     booking.status = CHECKED_OUT
     booking.actual_check_out = utcnow()
     await _reset_room(booking.room_id)
+    await revoke_door_pin(booking)
     await mark_room_dirty(session, booking.room_id)
     await session.commit()
     return {"reset": True}

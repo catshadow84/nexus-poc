@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import uuid4
 
-from sqlalchemy import Boolean, String, DateTime, ForeignKey, JSON, UniqueConstraint
+from sqlalchemy import Boolean, Integer, String, DateTime, ForeignKey, JSON, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .db import Base
@@ -39,6 +39,15 @@ class Booking(Base):
     planned_check_out: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     actual_check_in: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     actual_check_out: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    # What Apaleo quoted for the whole stay, in cents. None for older bookings.
+    total_cents: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    currency: Mapped[str | None] = mapped_column(String(3), nullable=True)
+
+    # Door code written to the lock at check-in and removed at check-out.
+    door_pin: Mapped[str | None] = mapped_column(String, nullable=True)
+    door_pin_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    door_pin_expires: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 

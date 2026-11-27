@@ -163,6 +163,18 @@ class TTLockClient:
             raise TTLockError(f"TT Lock did not return a passcode id: {data}")
         return int(data["keyboardPwdId"])
 
+    async def delete_passcode(self, lock_id: int, passcode_id: int) -> None:
+        """Remove a PIN from the lock, through the gateway.
+
+        The endpoint and fields follow the TT Lock docs as I remember them
+        (/v3/keyboardPwd/delete, deleteType 2 = gateway). Check this against the
+        "Delete passcode" page before relying on it with a real lock.
+        """
+        await self._post(
+            "/v3/keyboardPwd/delete",
+            {"lockId": lock_id, "keyboardPwdId": passcode_id, "deleteType": 2},
+        )
+
 
 class SimulatedTTLock:
     """Same methods as TTLockClient, but nothing leaves this computer."""
@@ -193,6 +205,9 @@ class SimulatedTTLock:
             "end": end,
         }
         return passcode_id
+
+    async def delete_passcode(self, lock_id: int, passcode_id: int) -> None:
+        self.passcodes.pop(passcode_id, None)
 
 
 _instance: TTLockClient | SimulatedTTLock | None = None

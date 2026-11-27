@@ -99,6 +99,15 @@ class BookingOut(BaseModel):
 
     model_config = {"from_attributes": True}
 
+class BookingDetailOut(BookingOut):
+    """One booking for its owner (or the front desk): adds the money and the door code."""
+
+    total_cents: Optional[int] = None
+    currency: Optional[str] = None
+    door_pin: Optional[str] = None
+    door_pin_expires: Optional[datetime] = None
+
+
 class BookingCreatedOut(BookingOut):
     guest_token: str
 
@@ -123,7 +132,7 @@ class OfferOut(BaseModel):
 
 class ApaleoBookingCreate(BaseModel):
     guest_id: str
-    room_id: str = "room1"
+    room_id: Optional[str] = None  # ignored: the server picks the room
     arrival: date
     departure: date
     adults: int = 2

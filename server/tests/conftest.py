@@ -4,7 +4,7 @@ import pytest
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from server import booking_service, devices, state
+from server import booking_service, devices, state, ttlock
 from server.booking_service import RESERVED
 from server.db import Base
 from server.models import Booking, Guest
@@ -35,6 +35,19 @@ def published(monkeypatch):
     state._stores.clear()
     devices._registries.clear()
     return sent
+
+
+@pytest.fixture(autouse=True)
+def door_is_simulated(monkeypatch):
+    """Tests must never talk to a real TT Lock, even if .env has the credentials."""
+    monkeypatch.setenv("TTLOCK_MODE", "sim")
+    monkeypatch.delenv("TTLOCK_LOCK_IDS", raising=False)
+    monkeypatch.delenv("ASSIGNABLE_ROOMS", raising=False)
+    monkeypatch.delenv("CHECKOUT_HOUR", raising=False)
+    monkeypatch.delenv("HOTEL_TIMEZONE", raising=False)
+    ttlock.reset_ttlock()
+    yield
+    ttlock.reset_ttlock()
 
 
 @pytest.fixture

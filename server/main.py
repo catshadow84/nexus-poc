@@ -1,5 +1,6 @@
 import math
 from .nora import handle_message
+from .rooms import assign_room
 from .scenes import apply_scene, list_scenes
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -8,7 +9,7 @@ from fastapi import Depends
 from .db import get_session, SessionLocal
 from .models import Guest, Booking, ServiceOrder, WebhookEvent
 from .schemas import (
-    GuestCreate, GuestOut, BookingCreate, BookingOut, ChatIn, ApaleoBookingCreate, OfferOut, BookingCreatedOut, OrderIn, GuestUpdate,
+    GuestCreate, GuestOut, BookingCreate, BookingOut, BookingDetailOut, ChatIn, ApaleoBookingCreate, OfferOut, BookingCreatedOut, OrderIn, GuestUpdate,
 )
 from .booking_service import (
     get_guest, get_booking, check_in, check_out,
@@ -362,6 +363,19 @@ async def create_apaleo_booking(
     if offer.get("minGuaranteeType") == "Prepayment":
         raise HTTPException(409, "This rate needs payment, which is not supported yet")
 
+    # Pick the room before touching Apaleo, so a full hotel never leaves an orphan reservation.
+    arrival_dt = datetime.combine(payload.arrival, dtime.min)
+    departure_dt = datetime.combine(payload.departure, dtime.min)
+    room_id = await assign_room(session, arrival_dt, departure_dt)
+    if room_id is None:
+        raise HTTPException(409, "No room is free for those dates")
+
+    quoted = offer.get("totalGrossAmount") or {}
+    total_cents = (
+        round(float(quoted["amount"]) * 100) if quoted.get("amount") is not None else None
+    )
+    currency = quoted.get("currency") or None
+
     first_name, last_name = split_name(guest.name)
     try:
         result = await client.create_booking(
@@ -379,12 +393,14 @@ async def create_apaleo_booking(
 
     booking = Booking(
         guest_id=payload.guest_id,
-        room_id=payload.room_id,
+        room_id=room_id,
         status=RESERVED,
-        planned_check_in=datetime.combine(payload.arrival, dtime.min),
-        planned_check_out=datetime.combine(payload.departure, dtime.min),
+        planned_check_in=arrival_dt,
+        planned_check_out=departure_dt,
         apaleo_booking_id=apaleo_booking_id,
         apaleo_reservation_id=apaleo_reservation_id,
+        total_cents=total_cents,
+        currency=currency,
     )
     session.add(booking)
     try:
@@ -435,8 +451,17 @@ async def booking_summary(
     else:
         nights = 1
 
-    ROOM_RATE_CENTS = 22000  # $220/night
-    room_charge_cents = nights * ROOM_RATE_CENTS
+    if b.total_cents is not None:
+        # The price Apaleo quoted when the guest booked.
+        if b.planned_check_in and b.planned_check_out:
+            nights = max(1, (b.planned_check_out.date() - b.planned_check_in.date()).days)
+        room_charge_cents = b.total_cents
+        currency = b.currency or "USD"
+    else:
+        # Older bookings have no stored price: use the demo rate.
+        ROOM_RATE_CENTS = 22000  # $220/night
+        room_charge_cents = nights * ROOM_RATE_CENTS
+        currency = "USD"
     orders_charge_cents = sum(o.unit_price_cents * o.quantity for o in orders)
     total_cents = room_charge_cents + orders_charge_cents
 
@@ -469,10 +494,10 @@ async def booking_summary(
         "orders_total_cents": orders_charge_cents,
         "total_cents": total_cents,
         "carbon_kg": carbon_kg,
-        "currency": "USD",
+        "currency": currency,
     }
 
-@app.get("/bookings/{booking_id}", response_model=BookingOut)
+@app.get("/bookings/{booking_id}", response_model=BookingDetailOut)
 async def read_booking(b: Booking = Depends(owned_booking)):
     return b
 

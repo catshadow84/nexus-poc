@@ -5,6 +5,7 @@ import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { WS_URL } from '@/config';
 import { api } from '@/lib/api';
 import { brand } from '@/lib/brand';
+import { groupPin, prettyMoment } from '@/lib/dates';
 import { clearToken, getStaff, getToken, getTrip } from '@/lib/session';
 import {
   Banner,
@@ -76,6 +77,8 @@ export default function HomeScreen() {
   const [bookingId, setBookingId] = useState<string | null>(null);
   const [roomId, setRoomId] = useState<'room1' | 'room2'>('room1');
   const [notice, setNotice] = useState<string | null>(null);
+  const [doorPin, setDoorPin] = useState<string | null>(null);
+  const [doorPinUntil, setDoorPinUntil] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -134,6 +137,8 @@ export default function HomeScreen() {
           }
           setRoomId(b.room_id);
           setBookingId(b.id);
+          setDoorPin(b.door_pin ?? null);
+          setDoorPinUntil(b.door_pin_expires ?? null);
           const g = await api(`/guests/${b.guest_id}`);
           if (!cancelled) setGuestName(g.name);
         } else {
@@ -278,6 +283,15 @@ export default function HomeScreen() {
         <Text style={text.muted}>
           {unlocked ? 'The door locks again by itself.' : 'Tap to open your door.'}
         </Text>
+        {isGuest && doorPin && (
+          <View style={styles.pinBox}>
+            <Text style={styles.pinLabel}>Your door code</Text>
+            <Text style={styles.pin}>{groupPin(doorPin)}</Text>
+            {doorPinUntil && (
+              <Text style={text.muted}>Works until {prettyMoment(doorPinUntil)}.</Text>
+            )}
+          </View>
+        )}
         <View style={layout.gap}>
           <Button
             label="Unlock door"
@@ -536,6 +550,17 @@ const styles = StyleSheet.create({
   },
   tileIcon: { color: brand.amber, fontSize: 20 },
   tileText: { color: brand.text, fontSize: 13, fontWeight: '600', textAlign: 'center' },
+  pinBox: {
+    marginTop: 12,
+    backgroundColor: brand.bg,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: brand.border,
+    padding: 14,
+    alignItems: 'center',
+  },
+  pinLabel: { color: brand.muted, fontSize: 12, fontWeight: '700', letterSpacing: 0.5 },
+  pin: { color: brand.amber, fontSize: 34, fontWeight: '800', letterSpacing: 4, marginTop: 4 },
   big: { color: brand.text, fontSize: 40, fontWeight: '800', marginTop: 10 },
   sliderLabel: { color: brand.muted, fontSize: 12, marginBottom: 2, letterSpacing: 0.5 },
   slider: { width: '100%', height: 36 },

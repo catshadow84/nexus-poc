@@ -3,7 +3,7 @@ import { ActivityIndicator, Alert, Image, Pressable, StyleSheet, Text, View } fr
 import { router, useFocusEffect } from 'expo-router';
 import { api } from '@/lib/api';
 import { light } from '@/lib/brand';
-import { nightsBetween, prettyDate } from '@/lib/dates';
+import { groupPin, nightsBetween, prettyDate, prettyMoment } from '@/lib/dates';
 import { heroPhoto } from '@/lib/rooms';
 import { clearToken, getTrip } from '@/lib/session';
 import {
@@ -22,6 +22,8 @@ type Booking = {
   planned_check_in: string | null;
   planned_check_out: string | null;
   apaleo_reservation_id: string | null;
+  door_pin?: string | null;
+  door_pin_expires?: string | null;
 };
 
 const STATUS: Record<string, { label: string; hint: string; color: string; bg: string }> = {
@@ -155,6 +157,18 @@ export default function TripsScreen() {
               <Row label="Reservation" value={booking.apaleo_reservation_id} />
             )}
 
+            {booking.status === 'CHECKED_IN' && booking.door_pin && (
+              <View style={styles.pinBox}>
+                <Text style={styles.pinLabel}>Your door code</Text>
+                <Text style={styles.pin}>{groupPin(booking.door_pin)}</Text>
+                {booking.door_pin_expires && (
+                  <Text style={styles.pinNote}>
+                    Works until {prettyMoment(booking.door_pin_expires)}. Type it on the door keypad.
+                  </Text>
+                )}
+              </View>
+            )}
+
             <View style={{ marginTop: 16, gap: 10 }}>
               {booking.status === 'RESERVED' && (
                 <>
@@ -212,6 +226,16 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 5, gap: 12 },
   rowLabel: { color: light.muted, fontSize: 15 },
   rowValue: { color: light.ink, fontSize: 15, fontWeight: '600', flexShrink: 1, textAlign: 'right' },
+  pinBox: {
+    marginTop: 14,
+    backgroundColor: light.soft,
+    borderRadius: 14,
+    padding: 14,
+    alignItems: 'center',
+  },
+  pinLabel: { color: light.muted, fontSize: 13, fontWeight: '700', letterSpacing: 0.5 },
+  pin: { color: light.navy, fontSize: 36, fontWeight: '800', letterSpacing: 4, marginTop: 4 },
+  pinNote: { color: light.muted, fontSize: 13, marginTop: 6, textAlign: 'center' },
   signOut: { alignSelf: 'center', paddingVertical: 20, paddingHorizontal: 20 },
   signOutText: { color: light.muted, fontSize: 15, fontWeight: '600' },
 });
