@@ -12,13 +12,14 @@ const FRONT: Item = { title: 'Front desk', text: 'Arrivals, departures, check-in
 const ROOMS: Item = { title: 'Housekeeping', text: 'Which rooms are dirty, being cleaned or ready', href: '/housekeeping' };
 const ISSUES: Item = { title: 'Maintenance issues', text: 'Report and track problems in rooms', href: '/maintenance' };
 const CONTROLS: Item = { title: 'Room controls', text: 'Lights, air conditioning, music and the door', href: '/?controls=1' };
+const ENERGY: Item = { title: 'Energy savings', text: 'What eco mode at check-out saves', href: '/energy' };
 const TEAM: Item = { title: 'Team', text: 'Staff accounts and roles', href: '/team' };
 
 const MENU: Record<StaffRole, Item[]> = {
   front_desk: [FRONT, ROOMS, ISSUES, CONTROLS],
   housekeeping: [ROOMS, ISSUES],
   maintenance: [ISSUES, CONTROLS],
-  manager: [FRONT, ROOMS, ISSUES, CONTROLS, TEAM],
+  manager: [FRONT, ROOMS, ISSUES, CONTROLS, ENERGY, TEAM],
 };
 
 export default function StaffHomeScreen() {

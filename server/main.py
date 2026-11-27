@@ -46,6 +46,7 @@ from .auth import (
 from .nora_tools import MENU, tool_create_service_order
 from .staff_routes import router as staff_router
 from .ops_routes import router as ops_router
+from .energy_routes import router as energy_router
 
 logging.basicConfig(level=logging.INFO)
 
@@ -90,6 +91,7 @@ app.add_middleware(
 
 app.include_router(staff_router)
 app.include_router(ops_router)
+app.include_router(energy_router)
 
 
 @app.get("/health")
