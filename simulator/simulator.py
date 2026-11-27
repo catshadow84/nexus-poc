@@ -17,7 +17,7 @@ DEVICES = ("light", "central_ac", "bose", "curtain", "door")
 state = {
     room: {
         "light": {"power": "off", "brightness": 0, "color": "neutral"},
-        "central_ac": {"current_c": 24.0, "target_c": 24.0, "mode": "cool", "power_kw": 0.3},
+        "central_ac": {"current_c": 26.0, "target_c": 26.0, "mode": "eco", "power_kw": 0.3},
         "bose": {"power": "off", "volume": 20, "playing": False},
         "curtain": {"open_pct": 0},
         "door": {"locked": True},
