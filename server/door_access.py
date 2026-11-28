@@ -103,3 +103,39 @@ async def revoke_door_pin(booking: Booking) -> None:
     booking.door_pin = None
     booking.door_pin_id = None
     booking.door_pin_expires = None
+
+
+
+async def refresh_door_pin(booking: Booking) -> dict:
+    """The departure date changed: keep the SAME code, with a new end time. Never raises.
+
+    The guest already knows the code, so it must not change. TT Lock cannot edit a code in
+    place here, so the old one is removed and the same digits are written again.
+    """
+    if booking.door_pin is None:
+        return await issue_door_pin(booking)
+    lock_id = lock_id_for(booking.room_id)
+    if lock_id is None:
+        return {"door_pin_issued": False, "door_pin_error": f"No lock is set up for {booking.room_id}"}
+    pin = booking.door_pin
+    try:
+        if booking.door_pin_id is not None:
+            await get_ttlock().delete_passcode(lock_id, booking.door_pin_id)
+    except TTLockError as e:
+        # Adding the same digits again would clash. The old code keeps working until its old end time.
+        log.error("Could not replace door code of booking %s: %s", booking.id, e)
+        return {"door_pin_issued": False, "door_pin_error": str(e)}
+    start, end = pin_window(booking)
+    try:
+        passcode_id = await get_ttlock().add_passcode(
+            lock_id, pin, f"Stay {booking.id[:8]}", start, end
+        )
+    except TTLockError as e:
+        log.error("Door code for booking %s could not be renewed: %s", booking.id, e)
+        booking.door_pin = None
+        booking.door_pin_id = None
+        booking.door_pin_expires = None
+        return {"door_pin_issued": False, "door_pin_error": str(e)}
+    booking.door_pin_id = passcode_id
+    booking.door_pin_expires = end
+    return {"door_pin_issued": True, "door_pin_error": None}

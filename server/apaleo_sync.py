@@ -6,7 +6,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from .apaleo import ApaleoClient
 from .booking_service import CANCELED, NO_SHOW, RESERVED, CHECKED_IN, CHECKED_OUT, _reset_room
+from .door_access import refresh_door_pin, revoke_door_pin
 from .models import Booking
+from .ops import mark_room_dirty
 from .timeutil import utcnow
 
 log = logging.getLogger("apaleo_sync")
@@ -26,6 +28,7 @@ def reconcile(booking, reservation: dict) -> list[str]:
             changes.append("status -> CHECKED_OUT")
             if was_in_room:
                 changes.append("room needs reset")
+                changes.append("door code ends")
             
     # 2. Handle Canceled / NoShow
     elif status in ("Canceled", "NoShow"):
@@ -50,6 +53,21 @@ def reconcile(booking, reservation: dict) -> list[str]:
             if getattr(booking, field) != new_value:
                 setattr(booking, field, new_value)
                 changes.append(f"{field} -> {day.isoformat()}")
+
+    # 4. The guest is in the room and the departure date moved (an extension, or a shorter stay)
+    if booking.status == CHECKED_IN:
+        value = reservation.get("departure")
+        if isinstance(value, str) and len(value) >= 10:
+            try:
+                day = date.fromisoformat(value[:10])
+            except ValueError:
+                day = None
+            if day is not None:
+                new_value = datetime.combine(day, time.min)
+                if booking.planned_check_out != new_value:
+                    booking.planned_check_out = new_value
+                    changes.append(f"planned_check_out -> {day.isoformat()}")
+                    changes.append("door code needs refresh")
 
     return changes
 
@@ -77,7 +95,16 @@ async def process_event(session: AsyncSession, client: ApaleoClient, payload: di
     )
     
     changes = reconcile(booking, reservation)
-    
+
+    # Checked out in Apaleo (for example at the front desk): the door code must stop working.
+    if "door code ends" in changes:
+        await revoke_door_pin(booking)
+        changes.append("door code removed")
+    # The stay was extended or shortened: the same code gets the new end time.
+    if "door code needs refresh" in changes:
+        result = await refresh_door_pin(booking)
+        changes.append("door code renewed" if result["door_pin_issued"] else f"door code NOT renewed: {result['door_pin_error']}")
+
     # The guest left: put the room into its energy-saving state, but only if
     # nobody else has checked in to that room in the meantime.
     if "room needs reset" in changes:
@@ -93,5 +120,7 @@ async def process_event(session: AsyncSession, client: ApaleoClient, payload: di
             log.info("Triggering energy scene for room %s", booking.room_id)
             await _reset_room(booking.room_id)
             changes.append("room reset triggered")
+            await mark_room_dirty(session, booking.room_id)
+            changes.append("room marked dirty")
 
     return f"{entity_id}: " + ("; ".join(changes) if changes else "no changes")
