@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from .booking_service import get_booking, get_guest
 from .models import ServiceOrder
+from . import nora_llm
 from .nora_tools import MENU, TOOLS
 from .state import get_store
 
@@ -396,6 +397,31 @@ async def handle_message(
         else:
             booking = None
 
+    if nora_llm.enabled():
+        currency = (booking.currency if booking else None) or "USD"
+        checkout_text = await _special_reply(session, "checkout_time", booking) if booking else ""
+        answer = await nora_llm.respond(
+            session,
+            message,
+            history_key=booking.id if booking else f"session:{session_id}",
+            ctx={
+                "room_id": room_id,
+                "booking_id": booking.id if booking else None,
+                "bill": lambda: _special_reply(session, "bill", booking),
+            },
+            system=nora_llm.system_prompt(guest_name, room_id, booking, currency, checkout_text),
+        )
+        if answer is not None:
+            return {
+                "reply": answer["reply"],
+                "actions": answer["actions"],
+                "session_id": session_id,
+                "guest_name": guest_name,
+                "room_id": room_id,
+                "booking_id": booking_id,
+                "engine": "claude",
+            }
+
     plan = _fallback_plan(message, guest_name, guest_prefs, room_id)
 
     reply = plan["reply"]
@@ -430,4 +456,5 @@ async def handle_message(
         "guest_name": guest_name,
         "room_id": room_id,
         "booking_id": booking_id,
+        "engine": "rules",
     }

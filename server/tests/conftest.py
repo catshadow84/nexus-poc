@@ -4,7 +4,7 @@ import pytest
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from server import booking_service, devices, state, ttlock
+from server import booking_service, devices, nora_llm, state, ttlock
 from server.booking_service import RESERVED
 from server.db import Base
 from server.models import Booking, Guest
@@ -48,6 +48,23 @@ def door_is_simulated(monkeypatch):
     ttlock.reset_ttlock()
     yield
     ttlock.reset_ttlock()
+
+
+@pytest.fixture(autouse=True)
+def no_real_claude(monkeypatch):
+    """Tests must never call the real Anthropic API, even if .env has a key."""
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("NORA_MODE", raising=False)
+    monkeypatch.delenv("NORA_MODEL", raising=False)
+    monkeypatch.delenv("NORA_MAX_PER_HOUR", raising=False)
+
+    async def refuse(payload):
+        raise AssertionError("a test tried to call the real Anthropic API")
+
+    monkeypatch.setattr(nora_llm, "post_messages", refuse)
+    nora_llm.reset_memory()
+    yield
+    nora_llm.reset_memory()
 
 
 @pytest.fixture
