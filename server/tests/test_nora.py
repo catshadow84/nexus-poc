@@ -178,3 +178,14 @@ async def test_checking_out_through_nora_ends_the_stay(session, make_booking):
 async def test_special_answers_need_a_stay(session):
     out = await handle_message(session, "s", "what's my bill", booking_id=None)
     assert "active stay" in out["reply"]
+
+
+async def test_the_bill_adds_up_repeated_items(session, make_booking):
+    booking = await checked_in(session, make_booking)
+    await handle_message(session, "s", "order 2 coffees", booking_id=booking.id)
+    await handle_message(session, "s", "order 2 coffees", booking_id=booking.id)
+    await handle_message(session, "s", "order a tea", booking_id=booking.id)
+    out = await handle_message(session, "s", "what's my bill", booking_id=booking.id)
+    assert "4x coffee" in out["reply"] and "1x tea" in out["reply"]
+    assert "2x coffee, 2x coffee" not in out["reply"]
+    assert "22.00" in out["reply"]  # 4 x 4.50 + 4.00

@@ -366,7 +366,11 @@ async def _special_reply(session, special: str, booking) -> str:
             lines.append(f"Room: {_money(booking.total_cents, currency)}")
         if rows:
             total = sum(o.quantity * o.unit_price_cents for o in rows)
-            items = ", ".join(f"{o.quantity}x {o.item}" for o in rows)
+            # Add up identical items, so two separate orders of coffee read "4x coffee", not a repeat.
+            counts: dict[str, int] = {}
+            for o in rows:
+                counts[o.item] = counts.get(o.item, 0) + o.quantity
+            items = ", ".join(f"{qty}x {item}" for item, qty in counts.items())
             lines.append(f"Room service: {items} = {_money(total, currency)}")
         else:
             lines.append("No room service orders yet")

@@ -250,3 +250,35 @@ async def test_eco_uses_the_eco_set_point_not_the_old_target(session, make_booki
     await say(session, booking, "I'm heading out")
     sent = [payload for topic, payload in published[before:] if "central_ac" in topic]
     assert sent and sent[-1]["value"]["target_c"] == 26.0 and sent[-1]["value"]["mode"] == "eco"
+
+
+async def test_hidden_thinking_blocks_are_not_sent_back_later(session, make_booking, claude):
+    booking = await stay(session, make_booking)
+    thinking = {"type": "thinking", "thinking": "hmm", "signature": "abc"}
+    claude.queue = [
+        {"stop_reason": "end_turn", "content": [thinking, {"type": "text", "text": "Hello Sam!"}]},
+        text("Still here."),
+    ]
+    await say(session, booking, "hello")
+    await say(session, booking, "are you there?")
+    assert "thinking" not in json.dumps(claude.payloads[1]["messages"])
+    assert "Hello Sam!" in json.dumps(claude.payloads[1]["messages"])
+
+
+async def test_thinking_is_kept_inside_one_exchange(session, make_booking, claude):
+    booking = await stay(session, make_booking)
+    thinking = {"type": "thinking", "thinking": "hmm", "signature": "abc"}
+    first = tool("get_room_state")
+    first["content"].insert(0, thinking)
+    claude.queue = [first, text("All good.")]
+    await say(session, booking, "status?")
+    assert "thinking" in json.dumps(claude.payloads[1]["messages"])
+
+
+async def test_the_model_is_told_the_bill_is_complete(session, make_booking, claude):
+    booking = await stay(session, make_booking)
+    claude.queue = [tool("get_bill"), text("Here it is.")]
+    await say(session, booking, "what do I owe?")
+    assert "complete and correct bill" in claude.payloads[0]["system"]
+    assert "Place an order as soon as" in claude.payloads[0]["system"]
+    assert "complete, correct bill" in claude.payloads[1]["messages"][-1]["content"][0]["content"]

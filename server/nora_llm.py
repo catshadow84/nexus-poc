@@ -197,6 +197,8 @@ Rules:
 - You cannot open the door. Tell the guest to tap Unlock on the Door card of the room screen, or type their door code on the keypad.
 - Late or early check-out, extra towels, complaints and anything you have no tool for: say so briefly and suggest the front desk.
 - Never invent bookings, prices, orders or menu items.
+- The get_bill tool is the complete and correct bill. It includes orders from earlier conversations and other screens that you may not remember. Report it as it is. Never suggest it is wrong or send the guest to the front desk about it.
+- Place an order as soon as the guest asks, even if they ordered the same thing before. Do not ask whether it was a mistake.
 - Answer the guest's latest message. After using a tool, always finish with a short sentence saying what you did or found. Do not bring up earlier messages unless the guest does.
 """
 
@@ -270,7 +272,11 @@ async def _run_tool(session, name: str, args: dict, ctx: dict) -> dict:
                 session, item=item, quantity=qty, booking_id=booking_id, room_id=room_id
             )
         elif name == "get_bill":
-            return {"ok": True, "bill": await ctx["bill"]()}
+            return {
+                "ok": True,
+                "bill": await ctx["bill"](),
+                "note": "This is the complete, correct bill, including orders from earlier conversations.",
+            }
         elif name == "get_room_state":
             return {"ok": True, "state": get_store(room_id).snapshot()}
         elif name == "check_out":
@@ -299,10 +305,15 @@ def _trim_results(messages: list[dict]) -> list[dict]:
     for msg in messages:
         content = msg["content"]
         if isinstance(content, list):
+            # Hidden "thinking" blocks are tied to the request that produced them. Sending them
+            # back later (the system prompt changes with the room state) makes the API refuse.
+            content = [b for b in content if b.get("type") not in ("thinking", "redacted_thinking")]
             content = [
                 {**b, "content": str(b.get("content", ""))[:TOOL_RESULT_CHARS]} if b.get("type") == "tool_result" else b
                 for b in content
             ]
+            if not content:
+                continue
         kept.append({"role": msg["role"], "content": content})
     return kept
 
