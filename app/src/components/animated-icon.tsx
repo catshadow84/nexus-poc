@@ -33,7 +33,9 @@ export function AnimatedSplashOverlay() {
     },
   });
 
-  const image = <Image style={styles.image} source={require('@/assets/images/expo-logo.png')} />;
+  const image = (
+    <Image style={styles.mark} source={require('@/assets/images/nexus-mark.png')} contentFit="contain" />
+  );
 
   return animate ? (
     <Animated.View
@@ -138,9 +140,13 @@ const styles = StyleSheet.create({
     height: 128,
     position: 'absolute',
   },
+  mark: {
+    width: 210,
+    height: 70,
+  },
   splashOverlay: {
     ...StyleSheet.absoluteFill,
-    backgroundColor: '#208AEF',
+    backgroundColor: '#0A1522', // brand.bg, so the launch flows into the dark app
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 1000,
