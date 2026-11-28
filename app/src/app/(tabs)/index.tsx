@@ -529,8 +529,7 @@ export default function HomeScreen() {
         </View>
       )}
 
-      {/* keeps the last card clear of the bottom tab bar */}
-      <View style={{ height: 96 }} />
+      <View style={{ height: 24 }} />
     </Screen>
   );
 }
